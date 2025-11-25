@@ -1,13 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { useStore } from '../store/useStore';
 import { Car, Truck, Bike } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export function RegisterVehicle() {
     const navigate = useNavigate();
     const { setUser, setVehicle } = useStore();
+    const [loading, setLoading] = useState(false);
 
     const [formData, setFormData] = useState({
         name: '',
@@ -18,23 +20,62 @@ export function RegisterVehicle() {
         type: 'sedan'
     });
 
+    // Check if user is logged in
+    useEffect(() => {
+        const checkUser = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) navigate('/');
+        };
+        checkUser();
+    }, [navigate]);
+
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        // Save to store
-        setUser({ name: formData.name, phone: formData.phone });
-        setVehicle({
-            model: formData.model,
-            color: formData.color,
-            plates: formData.plates,
-            type: formData.type
-        });
+        setLoading(true);
 
-        navigate('/role-selection');
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+
+            if (!user) throw new Error('No usuario autenticado');
+
+            const updates = {
+                id: user.id,
+                full_name: formData.name,
+                phone: formData.phone,
+                vehicle_model: formData.model,
+                vehicle_color: formData.color,
+                vehicle_plates: formData.plates,
+                vehicle_type: formData.type,
+                email: user.email,
+                updated_at: new Date(),
+            };
+
+            const { error } = await supabase
+                .from('profiles')
+                .upsert(updates);
+
+            if (error) throw error;
+
+            // Save to local store as well for UI speed
+            setUser({ name: formData.name, phone: formData.phone, email: user.email });
+            setVehicle({
+                model: formData.model,
+                color: formData.color,
+                plates: formData.plates,
+                type: formData.type
+            });
+
+            navigate('/role-selection');
+        } catch (error) {
+            alert('Error guardando datos: ' + error.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -111,8 +152,8 @@ export function RegisterVehicle() {
                     />
                 </div>
 
-                <Button type="submit" className="w-full mt-6">
-                    Guardar y Continuar
+                <Button type="submit" className="w-full mt-6" disabled={loading}>
+                    {loading ? 'Guardando...' : 'Guardar y Continuar'}
                 </Button>
             </form>
         </div>

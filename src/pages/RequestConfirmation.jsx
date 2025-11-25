@@ -3,18 +3,57 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { useStore } from '../store/useStore';
 import { MapPin, AlertCircle, Car } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export function RequestConfirmation() {
     const navigate = useNavigate();
     const { user, vehicle, currentRequest, setRequest } = useStore();
     const [acceptedTerms, setAcceptedTerms] = useState(false);
+    const [loading, setLoading] = useState(false);
 
-    const handleConfirm = () => {
+    const handleConfirm = async () => {
         if (!acceptedTerms) return;
+        setLoading(true);
 
-        // Update status to searching
-        setRequest({ status: 'searching' });
-        navigate('/request-status');
+        try {
+            const { data: { user: authUser } } = await supabase.auth.getUser();
+
+            if (!authUser) {
+                alert('Sesión expirada. Por favor inicia sesión de nuevo.');
+                navigate('/');
+                return;
+            }
+
+            // Insert into Supabase
+            const { data, error } = await supabase
+                .from('requests')
+                .insert([
+                    {
+                        user_id: authUser.id,
+                        location_lat: currentRequest.location.lat,
+                        location_lng: currentRequest.location.lng,
+                        issue_type: currentRequest.issueType.label,
+                        status: 'searching'
+                    }
+                ])
+                .select();
+
+            if (error) throw error;
+
+            // Update local store with the real ID from DB
+            setRequest({
+                id: data[0].id,
+                status: 'searching'
+            });
+
+            navigate('/request-status');
+
+        } catch (error) {
+            console.error('Error sending request:', error);
+            alert('Error al enviar solicitud: ' + error.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     if (!currentRequest.issueType) {
@@ -77,10 +116,10 @@ export function RequestConfirmation() {
 
             <Button
                 className="w-full max-w-md h-12 text-lg"
-                disabled={!acceptedTerms}
+                disabled={!acceptedTerms || loading}
                 onClick={handleConfirm}
             >
-                ENVIAR SOLICITUD
+                {loading ? 'ENVIANDO...' : 'ENVIAR SOLICITUD'}
             </Button>
 
             <button

@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import { Button } from '../components/ui/Button';
 import { useStore } from '../store/useStore';
 import { Car, Battery, Fuel, Wrench, AlertTriangle, Zap, Disc, Activity, Crosshair } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -41,6 +42,7 @@ export function RequestHelp() {
     const [position, setPosition] = useState({ lat: 19.4326, lng: -99.1332 });
     const [issueType, setIssueType] = useState(null);
     const [manualLocation, setManualLocation] = useState(false);
+    const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         if (navigator.geolocation) {
@@ -71,12 +73,68 @@ export function RequestHelp() {
         }
     };
 
-    const handleRequest = () => {
+    const handleRequest = async () => {
+        if (!position || !issueType) return;
+        setLoading(true);
+
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                alert('Debes iniciar sesión para pedir ayuda');
+                navigate('/');
+                return;
+            }
+
+            const issue = issues.find(i => i.id === issueType);
+
+            // Insert into Supabase
+            const { data, error } = await supabase
+                .from('requests')
+                .insert([
+                    {
+                        user_id: user.id,
+                        location_lat: position.lat,
+                        location_lng: position.lng,
+                        issue_type: issue.label,
+                        status: 'searching'
+                    }
+                ])
+                .select();
+
+            if (error) throw error;
+
+            // Update local store
+            setRequest({
+                id: data[0].id,
+                location: position,
+                issueType: issue,
+                status: 'searching'
+            });
+
+            navigate('/request-status'); // Skip confirmation for now to test flow, or go to confirmation? 
+            // Original flow went to confirmation. Let's keep it consistent but maybe save to DB *after* confirmation?
+            // Actually, for simplicity, let's assume the user confirms here or we move the DB save to the confirmation screen.
+            // Wait, the previous flow was RequestHelp -> RequestConfirmation -> RequestStatus.
+            // Let's revert this change and move the DB save to RequestConfirmation.
+
+        } catch (error) {
+            console.error('Error creating request:', error);
+            alert('Error al crear la solicitud: ' + error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Re-implementing the navigation to Confirmation screen instead of direct save
+    const handleGoToConfirmation = () => {
         if (!position || !issueType) return;
 
+        const issue = issues.find(i => i.id === issueType);
+
+        // Save to store temporarily
         setRequest({
             location: position,
-            issueType: issues.find(i => i.id === issueType),
+            issueType: issue,
             status: 'confirming'
         });
 
@@ -135,7 +193,7 @@ export function RequestHelp() {
                 <Button
                     className="w-full h-12 text-lg bg-red-600 hover:bg-red-700 text-white shadow-lg animate-pulse"
                     disabled={!issueType || !position}
-                    onClick={handleRequest}
+                    onClick={handleGoToConfirmation}
                 >
                     SOLICITAR AUXILIO
                 </Button>
