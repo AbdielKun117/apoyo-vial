@@ -20,11 +20,32 @@ export function RegisterVehicle() {
         type: 'sedan'
     });
 
-    // Check if user is logged in
+    // Check if user is logged in and fetch existing data
     useEffect(() => {
         const checkUser = async () => {
             const { data: { user } } = await supabase.auth.getUser();
-            if (!user) navigate('/');
+            if (!user) {
+                navigate('/');
+                return;
+            }
+
+            // Fetch existing profile
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', user.id)
+                .single();
+
+            if (profile) {
+                setFormData({
+                    name: profile.full_name || '',
+                    phone: profile.phone || '',
+                    model: profile.vehicle_model || '',
+                    color: profile.vehicle_color || '',
+                    plates: profile.vehicle_plates || '',
+                    type: profile.vehicle_type || 'sedan'
+                });
+            }
         };
         checkUser();
     }, [navigate]);

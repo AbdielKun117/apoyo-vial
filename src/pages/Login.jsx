@@ -26,12 +26,24 @@ export function Login() {
                 if (error) throw error;
                 alert('¡Registro exitoso! Revisa tu correo para confirmar (o inicia sesión si no activaste confirmación).');
             } else {
-                const { error } = await supabase.auth.signInWithPassword({
+                const { data: { user }, error } = await supabase.auth.signInWithPassword({
                     email,
                     password,
                 });
                 if (error) throw error;
-                navigate('/register-vehicle');
+
+                // Check if user has a profile
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('id')
+                    .eq('id', user.id)
+                    .single();
+
+                if (profile) {
+                    navigate('/role-selection');
+                } else {
+                    navigate('/register-vehicle');
+                }
             }
         } catch (err) {
             setError(err.message);

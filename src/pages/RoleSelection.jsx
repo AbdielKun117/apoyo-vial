@@ -1,12 +1,25 @@
 import { useNavigate } from 'react-router-dom';
-import { Wrench, Car } from 'lucide-react';
+import { Wrench, Car, UserCog } from 'lucide-react';
+import { Button } from '../components/ui/Button';
 
 export function RoleSelection() {
     const navigate = useNavigate();
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-[80vh] space-y-8">
-            <h1 className="text-2xl font-bold text-secondary text-center">¿Cómo quieres participar hoy?</h1>
+        <div className="flex flex-col items-center justify-center min-h-[80vh] space-y-8 relative">
+
+            <div className="absolute top-0 right-4">
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate('/register-vehicle')}
+                    className="flex items-center text-gray-600"
+                >
+                    <UserCog className="w-4 h-4 mr-2" /> Editar Perfil
+                </Button>
+            </div>
+
+            <h1 className="text-2xl font-bold text-secondary text-center mt-8">¿Cómo quieres participar hoy?</h1>
 
             <div className="grid grid-cols-1 gap-6 w-full max-w-md px-4">
                 <button
