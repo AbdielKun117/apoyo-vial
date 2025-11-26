@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { supabase } from '../lib/supabase';
+import { useStore } from '../store/useStore';
 
 export function Login() {
     const navigate = useNavigate();
+    const { setUser, setVehicle } = useStore();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -35,11 +37,23 @@ export function Login() {
                 // Check if user has a profile
                 const { data: profile } = await supabase
                     .from('profiles')
-                    .select('id')
+                    .select('*')
                     .eq('id', user.id)
                     .single();
 
                 if (profile) {
+                    // Load data into store
+                    setUser({
+                        name: profile.full_name,
+                        phone: profile.phone,
+                        email: user.email
+                    });
+                    setVehicle({
+                        model: profile.vehicle_model,
+                        color: profile.vehicle_color,
+                        plates: profile.vehicle_plates,
+                        type: profile.vehicle_type
+                    });
                     navigate('/role-selection');
                 } else {
                     navigate('/register-vehicle');
