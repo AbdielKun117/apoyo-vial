@@ -1,34 +1,64 @@
-import { useState, useEffect } from 'react';
-import { CheckCircle, Loader2, User, Phone, MessageSquare } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { CheckCircle, Loader2, User, Phone, MessageSquare, RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { useStore } from '../store/useStore';
 import { supabase } from '../lib/supabase';
 
 export function RequestStatus() {
-    const { currentRequest, setRequest } = useStore();
+    const { currentRequest } = useStore();
     const [status, setStatus] = useState(currentRequest.status || 'searching');
     const [helper, setHelper] = useState(null);
+    const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
+    // Function to fetch latest status and helper info
+    const fetchLatestData = useCallback(async () => {
         if (!currentRequest.id) return;
 
-        // 1. Check initial status
-        const checkStatus = async () => {
-            const { data, error } = await supabase
+        try {
+            setLoading(true);
+            console.log("Fetching request data...");
+
+            // 1. Get the request status first (No JOINs to avoid errors)
+            const { data: requestData, error: requestError } = await supabase
                 .from('requests')
-                .select(`*, helper:helper_id (*)`)
+                .select('*')
                 .eq('id', currentRequest.id)
                 .single();
 
-            if (data) {
-                setStatus(data.status);
-                if (data.helper) setHelper(data.helper);
+            if (requestError) throw requestError;
+
+            if (requestData) {
+                console.log("Request status:", requestData.status);
+                setStatus(requestData.status);
+
+                // 2. If there is a helper, fetch their profile manually
+                if (requestData.helper_id) {
+                    console.log("Fetching helper:", requestData.helper_id);
+                    const { data: helperData, error: helperError } = await supabase
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', requestData.helper_id)
+                        .single();
+
+                    if (helperError) {
+                        console.error("Error fetching helper profile:", helperError);
+                    } else {
+                        setHelper(helperData);
+                    }
+                }
             }
-        };
+        } catch (error) {
+            console.error("Error updating status:", error);
+        } finally {
+            setLoading(false);
+        }
+    }, [currentRequest.id]);
 
-        checkStatus();
+    useEffect(() => {
+        // Initial fetch
+        fetchLatestData();
 
-        // 2. Subscribe to changes
+        // Subscribe to changes
         const subscription = supabase
             .channel(`request:${currentRequest.id}`)
             .on('postgres_changes', {
@@ -36,30 +66,39 @@ export function RequestStatus() {
                 schema: 'public',
                 table: 'requests',
                 filter: `id=eq.${currentRequest.id}`
-            }, async (payload) => {
-                const newStatus = payload.new.status;
-                setStatus(newStatus);
-
-                // If found, fetch helper details
-                if (newStatus === 'found' && payload.new.helper_id) {
-                    const { data: helperData } = await supabase
-                        .from('profiles')
-                        .select('*')
-                        .eq('id', payload.new.helper_id)
-                        .single();
-
-                    setHelper(helperData);
-                }
+            }, (payload) => {
+                console.log("Realtime update received!", payload);
+                fetchLatestData();
             })
             .subscribe();
 
         return () => {
             supabase.removeChannel(subscription);
         };
-    }, [currentRequest.id]);
+    }, [currentRequest.id, fetchLatestData]);
+
+    const handleCall = () => {
+        if (helper?.phone) {
+            window.location.href = `tel:${helper.phone}`;
+        }
+    };
+
+    const handleMessage = () => {
+        if (helper?.phone) {
+            const cleanPhone = helper.phone.replace(/\D/g, '');
+            window.open(`https://wa.me/${cleanPhone}`, '_blank');
+        }
+    };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-[80vh] space-y-8 p-4">
+        <div className="flex flex-col items-center justify-center min-h-[80vh] space-y-8 p-4 relative">
+            {/* Debug/Refresh Button */}
+            <div className="absolute top-0 right-0 p-4">
+                <Button variant="ghost" size="sm" onClick={fetchLatestData} disabled={loading}>
+                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                </Button>
+            </div>
+
             {status === 'searching' && (
                 <>
                     <div className="relative">
@@ -111,16 +150,29 @@ export function RequestStatus() {
                         <div className="mt-6 flex space-x-3">
                             <Button
                                 className="flex-1 bg-green-600 hover:bg-green-700"
-                                onClick={() => window.open(`tel:${helper.phone}`)}
+                                onClick={handleCall}
                             >
                                 <Phone className="w-4 h-4 mr-2" /> Llamar
                             </Button>
-                            <Button className="flex-1" variant="outline">
-                                <MessageSquare className="w-4 h-4 mr-2" /> Mensaje
+                            <Button
+                                className="flex-1"
+                                variant="outline"
+                                onClick={handleMessage}
+                            >
+                                <MessageSquare className="w-4 h-4 mr-2" /> WhatsApp
                             </Button>
                         </div>
                     </div>
                 </>
+            )}
+
+            {/* Fallback if status is found but helper data failed to load */}
+            {status === 'found' && !helper && (
+                <div className="text-center space-y-2">
+                    <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
+                    <p className="text-gray-500">Cargando datos del ayudante...</p>
+                    <Button variant="link" onClick={fetchLatestData}>Reintentar</Button>
+                </div>
             )}
         </div>
     );
