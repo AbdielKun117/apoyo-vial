@@ -74,6 +74,7 @@ export function RequestStatus() {
     const [status, setStatus] = useState(currentRequest.status || 'searching');
     const [helper, setHelper] = useState(null);
     const [helperLocation, setHelperLocation] = useState(null);
+    const [requestLocation, setRequestLocation] = useState(null); // New state for robust location
     const [eta, setEta] = useState(null);
     const [loading, setLoading] = useState(false);
 
@@ -95,6 +96,14 @@ export function RequestStatus() {
             if (requestData) {
                 if (requestData.status !== status) {
                     setStatus(requestData.status);
+                }
+
+                // Set robust location from DB
+                if (requestData.location_lat && requestData.location_lng) {
+                    setRequestLocation({
+                        lat: requestData.location_lat,
+                        lng: requestData.location_lng
+                    });
                 }
 
                 if (requestData.helper_id) {
@@ -126,10 +135,10 @@ export function RequestStatus() {
 
     // Calculate ETA whenever locations change
     useEffect(() => {
-        if (currentRequest.location && helperLocation) {
+        if (requestLocation && helperLocation) {
             const dist = calculateDistance(
-                currentRequest.location.lat,
-                currentRequest.location.lng,
+                requestLocation.lat,
+                requestLocation.lng,
                 helperLocation.lat,
                 helperLocation.lng
             );
@@ -141,7 +150,7 @@ export function RequestStatus() {
             // Add a small buffer (e.g. 2 mins) for traffic/parking
             setEta(timeMinutes + 2);
         }
-    }, [currentRequest.location, helperLocation]);
+    }, [requestLocation, helperLocation]);
 
     useEffect(() => {
         fetchLatestData(false);
@@ -184,16 +193,16 @@ export function RequestStatus() {
         <div className="flex flex-col h-[calc(100vh-64px)] relative">
             {/* Map View */}
             <div className="h-1/2 w-full relative bg-gray-100">
-                {currentRequest.location ? (
+                {requestLocation ? (
                     <MapContainer
-                        center={[currentRequest.location.lat, currentRequest.location.lng]}
+                        center={[requestLocation.lat, requestLocation.lng]}
                         zoom={13}
                         style={{ height: '100%', width: '100%' }}
                     >
                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
                         {/* User Location */}
-                        <Marker position={[currentRequest.location.lat, currentRequest.location.lng]} icon={userIcon}>
+                        <Marker position={[requestLocation.lat, requestLocation.lng]} icon={userIcon}>
                             <Popup>Tu Ubicación</Popup>
                         </Marker>
 
@@ -204,11 +213,12 @@ export function RequestStatus() {
                             </Marker>
                         )}
 
-                        <MapUpdater userLocation={currentRequest.location} helperLocation={helperLocation} />
+                        <MapUpdater userLocation={requestLocation} helperLocation={helperLocation} />
                     </MapContainer>
                 ) : (
                     <div className="flex items-center justify-center h-full text-gray-400">
-                        Mapa no disponible
+                        <Loader2 className="w-8 h-8 animate-spin mr-2" />
+                        Cargando mapa...
                     </div>
                 )}
 

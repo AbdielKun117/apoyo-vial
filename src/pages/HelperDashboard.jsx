@@ -79,13 +79,56 @@ export function HelperDashboard() {
     const [selectedRequest, setSelectedRequest] = useState(null);
     const [accepting, setAccepting] = useState(false);
 
-    // Get Helper Location
+    // Check for active job and broadcast location
     useEffect(() => {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition((pos) => {
-                setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-            });
-        }
+        let watchId;
+        let lastUpdate = 0;
+
+        const checkActiveJobAndTrack = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            // Check if this helper has an active request (status 'found' or 'arrived')
+            const { data: activeRequests } = await supabase
+                .from('requests')
+                .select('id')
+                .eq('helper_id', user.id)
+                .in('status', ['found', 'arrived']);
+
+            const hasActiveJob = activeRequests && activeRequests.length > 0;
+
+            if (navigator.geolocation) {
+                watchId = navigator.geolocation.watchPosition(
+                    async (pos) => {
+                        const { latitude, longitude } = pos.coords;
+                        setUserLocation({ lat: latitude, lng: longitude });
+
+                        // Only broadcast to DB if we have an active job and enough time passed (10s)
+                        const now = Date.now();
+                        if (hasActiveJob && now - lastUpdate > 10000) {
+                            lastUpdate = now;
+                            console.log("Broadcasting location...", latitude, longitude);
+                            await supabase
+                                .from('profiles')
+                                .update({
+                                    current_lat: latitude,
+                                    current_lng: longitude,
+                                    updated_at: new Date().toISOString()
+                                })
+                                .eq('id', user.id);
+                        }
+                    },
+                    (err) => console.error("Location error:", err),
+                    { enableHighAccuracy: true }
+                );
+            }
+        };
+
+        checkActiveJobAndTrack();
+
+        return () => {
+            if (watchId) navigator.geolocation.clearWatch(watchId);
+        };
     }, []);
 
     // Fetch Requests
@@ -144,7 +187,7 @@ export function HelperDashboard() {
             alert(`¡Has aceptado ayudar a ${request.profiles?.full_name}! Dirígete a su ubicación.`);
 
             // Open navigation
-            window.open(`https://www.google.com/maps/dir/?api=1&destination=${request.location_lat},${request.location_lng}`, '_blank');
+            window.open(`https://www.google.com/maps/dir/?api=1&destination=${request.location_lat},${request.location_lng}&travelmode=driving`, '_blank');
 
             // Clear selection and refresh list
             setSelectedRequest(null);
@@ -216,7 +259,7 @@ export function HelperDashboard() {
                         </div>
                         <div className="flex items-center text-sm text-gray-500 mb-4">
                             <Clock className="w-4 h-4 mr-1" />
-                            <span>Tiempo estimado: 15 min</span>
+                            <span>Tiempo estimado: Calculando...</span>
                         </div>
                         <Button
                             className="w-full bg-green-600 hover:bg-green-700"
