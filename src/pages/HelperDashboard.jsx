@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import { Battery, Navigation, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { Battery, Navigation, AlertTriangle, CheckCircle, Clock, RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { supabase } from '../lib/supabase';
 import 'leaflet/dist/leaflet.css';
@@ -89,31 +89,41 @@ export function HelperDashboard() {
     }, []);
 
     // Fetch Requests
+    const fetchRequests = useCallback(async (isBackground = false) => {
+        if (!isBackground) setLoading(true);
+
+        const { data, error } = await supabase
+            .from('requests')
+            .select(`*, profiles:user_id (full_name, phone)`)
+            .eq('status', 'searching');
+
+        if (error) console.error('Error fetching requests:', error);
+        else setRequests(data || []);
+
+        if (!isBackground) setLoading(false);
+    }, []);
+
     useEffect(() => {
-        const fetchRequests = async () => {
-            const { data, error } = await supabase
-                .from('requests')
-                .select(`*, profiles:user_id (full_name, phone)`)
-                .eq('status', 'searching');
-
-            if (error) console.error('Error fetching requests:', error);
-            else setRequests(data || []);
-            setLoading(false);
-        };
-
         fetchRequests();
+
+        // Auto-refresh every 5 seconds
+        const intervalId = setInterval(() => {
+            fetchRequests(true);
+        }, 5000);
 
         const subscription = supabase
             .channel('public:requests')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, () => {
-                fetchRequests();
+                console.log("Realtime update received");
+                fetchRequests(true);
             })
             .subscribe();
 
         return () => {
+            clearInterval(intervalId);
             supabase.removeChannel(subscription);
         };
-    }, []);
+    }, [fetchRequests]);
 
     const handleAcceptRequest = async (request) => {
         setAccepting(true);
@@ -136,8 +146,9 @@ export function HelperDashboard() {
             // Open navigation
             window.open(`https://www.google.com/maps/dir/?api=1&destination=${request.location_lat},${request.location_lng}`, '_blank');
 
-            // Clear selection
+            // Clear selection and refresh list
             setSelectedRequest(null);
+            fetchRequests();
 
         } catch (error) {
             alert("Error al aceptar: " + error.message);
@@ -147,7 +158,7 @@ export function HelperDashboard() {
     };
 
     return (
-        <div className="flex flex-col h-[calc(100vh-64px)]">
+        <div className="flex flex-col h-[calc(100vh-64px)] relative">
             <div className="h-1/2 w-full relative">
                 <MapContainer center={[19.4326, -99.1332]} zoom={12} style={{ height: '100%', width: '100%' }}>
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
@@ -181,6 +192,19 @@ export function HelperDashboard() {
                     ))}
                 </MapContainer>
 
+                {/* Manual Refresh Button */}
+                <div className="absolute top-4 right-4 z-[1000]">
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        className="bg-white shadow-md hover:bg-gray-100 text-gray-700"
+                        onClick={() => fetchRequests(false)}
+                        disabled={loading}
+                    >
+                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                    </Button>
+                </div>
+
                 {selectedRequest && (
                     <div className="absolute bottom-4 left-4 right-4 bg-white p-4 rounded-lg shadow-xl z-[1000] border-l-4 border-primary animate-in slide-in-from-bottom">
                         <div className="flex justify-between items-start mb-2">
@@ -206,9 +230,11 @@ export function HelperDashboard() {
             </div>
 
             <div className="flex-1 bg-white p-4 overflow-y-auto">
-                <h2 className="text-lg font-bold text-gray-800 mb-4">Solicitudes Activas ({requests.length})</h2>
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-lg font-bold text-gray-800">Solicitudes Activas ({requests.length})</h2>
+                </div>
 
-                {loading ? (
+                {loading && requests.length === 0 ? (
                     <p className="text-center text-gray-500">Cargando...</p>
                 ) : requests.length === 0 ? (
                     <p className="text-center text-gray-500">No hay solicitudes pendientes.</p>
