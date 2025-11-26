@@ -11,12 +11,12 @@ export function RequestStatus() {
     const [loading, setLoading] = useState(false);
 
     // Function to fetch latest status and helper info
-    const fetchLatestData = useCallback(async () => {
+    const fetchLatestData = useCallback(async (isBackground = false) => {
         if (!currentRequest.id) return;
 
         try {
-            setLoading(true);
-            console.log("Fetching request data...");
+            if (!isBackground) setLoading(true);
+            // console.log("Fetching request data...");
 
             // 1. Get the request status first (No JOINs to avoid errors)
             const { data: requestData, error: requestError } = await supabase
@@ -28,12 +28,14 @@ export function RequestStatus() {
             if (requestError) throw requestError;
 
             if (requestData) {
-                console.log("Request status:", requestData.status);
-                setStatus(requestData.status);
+                // Only update state if changed to avoid unnecessary re-renders
+                if (requestData.status !== status) {
+                    setStatus(requestData.status);
+                }
 
                 // 2. If there is a helper, fetch their profile manually
                 if (requestData.helper_id) {
-                    console.log("Fetching helper:", requestData.helper_id);
+                    // console.log("Fetching helper:", requestData.helper_id);
                     const { data: helperData, error: helperError } = await supabase
                         .from('profiles')
                         .select('*')
@@ -50,15 +52,20 @@ export function RequestStatus() {
         } catch (error) {
             console.error("Error updating status:", error);
         } finally {
-            setLoading(false);
+            if (!isBackground) setLoading(false);
         }
-    }, [currentRequest.id]);
+    }, [currentRequest.id, status]);
 
     useEffect(() => {
         // Initial fetch
-        fetchLatestData();
+        fetchLatestData(false);
 
-        // Subscribe to changes
+        // Auto-refresh every 2 seconds (Polling fallback)
+        const intervalId = setInterval(() => {
+            fetchLatestData(true); // true = background fetch (no loading spinner)
+        }, 2000);
+
+        // Subscribe to changes (Realtime)
         const subscription = supabase
             .channel(`request:${currentRequest.id}`)
             .on('postgres_changes', {
@@ -68,11 +75,12 @@ export function RequestStatus() {
                 filter: `id=eq.${currentRequest.id}`
             }, (payload) => {
                 console.log("Realtime update received!", payload);
-                fetchLatestData();
+                fetchLatestData(false);
             })
             .subscribe();
 
         return () => {
+            clearInterval(intervalId);
             supabase.removeChannel(subscription);
         };
     }, [currentRequest.id, fetchLatestData]);
@@ -94,7 +102,7 @@ export function RequestStatus() {
         <div className="flex flex-col items-center justify-center min-h-[80vh] space-y-8 p-4 relative">
             {/* Debug/Refresh Button */}
             <div className="absolute top-0 right-0 p-4">
-                <Button variant="ghost" size="sm" onClick={fetchLatestData} disabled={loading}>
+                <Button variant="ghost" size="sm" onClick={() => fetchLatestData(false)} disabled={loading}>
                     <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 </Button>
             </div>
@@ -171,7 +179,7 @@ export function RequestStatus() {
                 <div className="text-center space-y-2">
                     <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
                     <p className="text-gray-500">Cargando datos del ayudante...</p>
-                    <Button variant="link" onClick={fetchLatestData}>Reintentar</Button>
+                    <Button variant="link" onClick={() => fetchLatestData(false)}>Reintentar</Button>
                 </div>
             )}
         </div>
