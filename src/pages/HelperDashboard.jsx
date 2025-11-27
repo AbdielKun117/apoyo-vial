@@ -41,45 +41,6 @@ const greenIcon = new L.Icon({
 function FitBounds({ requests, userLocation, selectedRequest, activeJob, victimLocation }) {
     const map = useMap();
 
-    useEffect(() => {
-        if (!map) return;
-
-        const bounds = L.latLngBounds();
-        let hasPoints = false;
-
-        // Priority 1: Active Job (Show Helper + Victim)
-        if (activeJob && userLocation && victimLocation) {
-            bounds.extend([userLocation.lat, userLocation.lng]);
-            bounds.extend([victimLocation.lat, victimLocation.lng]);
-            hasPoints = true;
-        }
-        // Priority 2: Selected Request
-        else if (selectedRequest && userLocation) {
-            bounds.extend([userLocation.lat, userLocation.lng]);
-            bounds.extend([selectedRequest.location_lat, selectedRequest.location_lng]);
-            hasPoints = true;
-        }
-        // Priority 3: All Requests
-        else {
-            if (userLocation) {
-                bounds.extend([userLocation.lat, userLocation.lng]);
-                hasPoints = true;
-            }
-            requests.forEach(req => {
-                bounds.extend([req.location_lat, req.location_lng]);
-                hasPoints = true;
-            });
-        }
-
-        if (hasPoints) {
-            map.fitBounds(bounds, { padding: [50, 50] });
-        }
-    }, [map, requests, userLocation, selectedRequest, activeJob, victimLocation]);
-
-    return null;
-}
-
-export function HelperDashboard() {
     const navigate = useNavigate();
     const [requests, setRequests] = useState([]);
     const [activeJob, setActiveJob] = useState(null);
