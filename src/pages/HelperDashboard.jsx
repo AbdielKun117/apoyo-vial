@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import { Battery, Navigation, AlertTriangle, CheckCircle, Clock, RefreshCw, Phone, MessageSquare } from 'lucide-react';
+import { Battery, Navigation, AlertTriangle, CheckCircle, Clock, RefreshCw, Phone, MessageSquare, XCircle, Star } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { supabase } from '../lib/supabase';
 import 'leaflet/dist/leaflet.css';
@@ -37,7 +37,7 @@ const greenIcon = new L.Icon({
 });
 
 // Component to auto-fit map bounds
-function FitBounds({ requests, userLocation, selectedRequest, activeJob }) {
+function FitBounds({ requests, userLocation, selectedRequest, activeJob, victimLocation }) {
     const map = useMap();
 
     useEffect(() => {
@@ -46,10 +46,10 @@ function FitBounds({ requests, userLocation, selectedRequest, activeJob }) {
         const bounds = L.latLngBounds();
         let hasPoints = false;
 
-        // Priority 1: Active Job
-        if (activeJob && userLocation) {
+        // Priority 1: Active Job (Show Helper + Victim)
+        if (activeJob && userLocation && victimLocation) {
             bounds.extend([userLocation.lat, userLocation.lng]);
-            bounds.extend([activeJob.location_lat, activeJob.location_lng]);
+            bounds.extend([victimLocation.lat, victimLocation.lng]);
             hasPoints = true;
         }
         // Priority 2: Selected Request
@@ -73,18 +73,25 @@ function FitBounds({ requests, userLocation, selectedRequest, activeJob }) {
         if (hasPoints) {
             map.fitBounds(bounds, { padding: [50, 50] });
         }
-    }, [map, requests, userLocation, selectedRequest, activeJob]);
+    }, [map, requests, userLocation, selectedRequest, activeJob, victimLocation]);
 
     return null;
 }
 
 export function HelperDashboard() {
     const [requests, setRequests] = useState([]);
-    const [activeJob, setActiveJob] = useState(null); // State for the accepted request
+    const [activeJob, setActiveJob] = useState(null);
+    const [victimLocation, setVictimLocation] = useState(null);
     const [loading, setLoading] = useState(true);
     const [userLocation, setUserLocation] = useState(null);
     const [selectedRequest, setSelectedRequest] = useState(null);
     const [accepting, setAccepting] = useState(false);
+
+    // UI States
+    const [showCancelModal, setShowCancelModal] = useState(false);
+    const [cancelReason, setCancelReason] = useState('');
+    const [showRatingModal, setShowRatingModal] = useState(false);
+    const [rating, setRating] = useState(0);
 
     // 1. Get Helper Location & Track if Active Job exists
     useEffect(() => {
@@ -101,33 +108,24 @@ export function HelperDashboard() {
                         const { latitude, longitude } = pos.coords;
                         setUserLocation({ lat: latitude, lng: longitude });
 
-                        // Only broadcast to DB if we have an active job
-                        // We check the 'activeJob' state ref or fetch it? 
-                        // Better to rely on the functional update or a ref, but for simplicity:
-                        // We will check Supabase directly or rely on the local state if it's reliable.
-                        // Let's check Supabase to be sure we should be tracking.
-
                         const now = Date.now();
-                        if (now - lastUpdate > 5000) { // Update every 5s
-                            // Check if we really have an active job in DB to avoid stale state issues
-                            const { data: activeRequests } = await supabase
-                                .from('requests')
-                                .select('id')
-                                .eq('helper_id', user.id)
-                                .in('status', ['found', 'arrived']);
+                        if (now - lastUpdate > 5000) {
+                            // Check active job status via ref or just broadcast if we are in "Mission Mode" (activeJob state)
+                            // Since this effect runs once, we can't see 'activeJob' state updates easily without adding it to dependency.
+                            // But adding it to dependency restarts the watcher.
+                            // Instead, we can check DB or just broadcast if we are logged in.
+                            // Broadcasting always is fine for a helper app, or we can check the 'requests' table.
 
-                            if (activeRequests && activeRequests.length > 0) {
-                                lastUpdate = now;
-                                console.log("Broadcasting location...", latitude, longitude);
-                                await supabase
-                                    .from('profiles')
-                                    .update({
-                                        current_lat: latitude,
-                                        current_lng: longitude,
-                                        updated_at: new Date().toISOString()
-                                    })
-                                    .eq('id', user.id);
-                            }
+                            // For efficiency, let's just broadcast.
+                            lastUpdate = now;
+                            await supabase
+                                .from('profiles')
+                                .update({
+                                    current_lat: latitude,
+                                    current_lng: longitude,
+                                    updated_at: new Date().toISOString()
+                                })
+                                .eq('id', user.id);
                         }
                     },
                     (err) => console.error("Location error:", err),
@@ -150,20 +148,33 @@ export function HelperDashboard() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        // First, check if I have an active job
+        // Check for active job
         const { data: myJobs, error: jobError } = await supabase
             .from('requests')
             .select(`*, profiles:user_id (full_name, phone)`)
             .eq('helper_id', user.id)
             .in('status', ['found', 'arrived'])
-            .single();
+            .maybeSingle(); // Use maybeSingle to avoid errors if 0 or >1 (should be 0 or 1)
 
         if (myJobs) {
             setActiveJob(myJobs);
-            setRequests([]); // Clear other requests
+            setRequests([]);
+
+            // Fetch victim's live location
+            const { data: victimProfile } = await supabase
+                .from('profiles')
+                .select('current_lat, current_lng')
+                .eq('id', myJobs.user_id)
+                .single();
+
+            if (victimProfile && victimProfile.current_lat) {
+                setVictimLocation({ lat: victimProfile.current_lat, lng: victimProfile.current_lng });
+            }
+
         } else {
             setActiveJob(null);
-            // If no active job, fetch open requests
+            setVictimLocation(null);
+
             const { data, error } = await supabase
                 .from('requests')
                 .select(`*, profiles:user_id (full_name, phone)`)
@@ -178,10 +189,7 @@ export function HelperDashboard() {
 
     useEffect(() => {
         fetchRequests();
-
-        const intervalId = setInterval(() => {
-            fetchRequests(true);
-        }, 5000);
+        const intervalId = setInterval(() => fetchRequests(true), 5000);
 
         const subscription = supabase
             .channel('public:requests')
@@ -196,6 +204,7 @@ export function HelperDashboard() {
         };
     }, [fetchRequests]);
 
+    // 3. Actions
     const handleAcceptRequest = async (request) => {
         setAccepting(true);
         try {
@@ -213,8 +222,6 @@ export function HelperDashboard() {
             if (error) throw error;
 
             alert(`¡Has aceptado ayudar a ${request.profiles?.full_name}!`);
-
-            // Force immediate fetch to switch view
             fetchRequests();
             setSelectedRequest(null);
 
@@ -237,9 +244,48 @@ export function HelperDashboard() {
                 .eq('id', activeJob.id);
 
             if (error) throw error;
-            fetchRequests();
+            setShowRatingModal(true); // Show rating instead of just fetching
         } catch (error) {
             console.error("Error completing job:", error);
+        }
+    };
+
+    const handleCancel = async () => {
+        if (!cancelReason) return alert("Por favor selecciona una razón");
+
+        try {
+            const { error } = await supabase
+                .from('requests')
+                .update({
+                    status: 'cancelled',
+                    cancel_reason: cancelReason
+                })
+                .eq('id', activeJob.id);
+
+            if (error) throw error;
+
+            setShowCancelModal(false);
+            fetchRequests(); // Should return to dashboard
+        } catch (error) {
+            alert("Error al cancelar: " + error.message);
+        }
+    };
+
+    const handleRate = async () => {
+        if (rating === 0) return alert("Por favor selecciona una calificación");
+
+        try {
+            const { error } = await supabase
+                .from('requests')
+                .update({ rating_helper: rating })
+                .eq('id', activeJob.id);
+
+            if (error) throw error;
+
+            setShowRatingModal(false);
+            fetchRequests(); // Back to dashboard
+        } catch (error) {
+            alert("Error al calificar: " + error.message);
         }
     };
 
@@ -258,7 +304,7 @@ export function HelperDashboard() {
                 <div className="h-2/3 w-full relative">
                     <MapContainer center={[activeJob.location_lat, activeJob.location_lng]} zoom={13} style={{ height: '100%', width: '100%' }}>
                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                        <FitBounds requests={[]} userLocation={userLocation} activeJob={activeJob} />
+                        <FitBounds requests={[]} userLocation={userLocation} activeJob={activeJob} victimLocation={victimLocation} />
 
                         {/* Helper */}
                         {userLocation && (
@@ -266,14 +312,20 @@ export function HelperDashboard() {
                                 <Popup>Tú</Popup>
                             </Marker>
                         )}
-                        {/* Victim */}
-                        <Marker position={[activeJob.location_lat, activeJob.location_lng]} icon={greenIcon}>
-                            <Popup>Solicitante: {activeJob.profiles?.full_name}</Popup>
-                        </Marker>
+                        {/* Victim (Live or Static) */}
+                        {victimLocation ? (
+                            <Marker position={[victimLocation.lat, victimLocation.lng]} icon={greenIcon}>
+                                <Popup>Solicitante (En vivo)</Popup>
+                            </Marker>
+                        ) : (
+                            <Marker position={[activeJob.location_lat, activeJob.location_lng]} icon={greenIcon}>
+                                <Popup>Solicitante (Ubicación inicial)</Popup>
+                            </Marker>
+                        )}
                     </MapContainer>
                 </div>
 
-                <div className="flex-1 bg-white p-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-[1000] rounded-t-3xl -mt-6">
+                <div className="flex-1 bg-white p-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-[1000] rounded-t-3xl -mt-6 overflow-y-auto">
                     <div className="flex justify-between items-start mb-4">
                         <div>
                             <h2 className="text-xl font-bold text-gray-800">Ayudando a {activeJob.profiles?.full_name}</h2>
@@ -293,10 +345,62 @@ export function HelperDashboard() {
                         </Button>
                     </div>
 
-                    <Button className="w-full bg-gray-900 hover:bg-gray-800" onClick={handleCompleteJob}>
+                    <Button className="w-full bg-gray-900 hover:bg-gray-800 mb-3" onClick={handleCompleteJob}>
                         <CheckCircle className="w-4 h-4 mr-2" /> Finalizar Ayuda
                     </Button>
+
+                    <Button variant="ghost" className="w-full text-red-500 text-sm" onClick={() => setShowCancelModal(true)}>
+                        Cancelar Servicio
+                    </Button>
                 </div>
+
+                {/* Cancel Modal */}
+                {showCancelModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] p-4">
+                        <div className="bg-white rounded-lg p-6 w-full max-w-sm">
+                            <h3 className="font-bold text-lg mb-4">Cancelar Servicio</h3>
+                            <p className="text-sm text-gray-600 mb-4">¿Por qué deseas cancelar?</p>
+                            <select
+                                className="w-full p-2 border rounded mb-4"
+                                value={cancelReason}
+                                onChange={(e) => setCancelReason(e.target.value)}
+                            >
+                                <option value="">Selecciona una razón</option>
+                                <option value="No encuentro la ubicación">No encuentro la ubicación</option>
+                                <option value="Vehículo averiado">Vehículo averiado</option>
+                                <option value="Zona peligrosa">Zona peligrosa</option>
+                                <option value="Otro">Otro</option>
+                            </select>
+                            <div className="flex space-x-2">
+                                <Button variant="outline" className="flex-1" onClick={() => setShowCancelModal(false)}>Volver</Button>
+                                <Button className="flex-1 bg-red-600 hover:bg-red-700" onClick={handleCancel}>Confirmar</Button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Rating Modal */}
+                {showRatingModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] p-4">
+                        <div className="bg-white rounded-lg p-6 w-full max-w-sm text-center">
+                            <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-2" />
+                            <h3 className="font-bold text-lg mb-2">¡Ayuda Finalizada!</h3>
+                            <p className="text-gray-600 mb-4">Califica al solicitante</p>
+
+                            <div className="flex justify-center space-x-2 mb-6">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                    <button key={star} onClick={() => setRating(star)}>
+                                        <Star className={`w-8 h-8 ${rating >= star ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />
+                                    </button>
+                                ))}
+                            </div>
+
+                            <Button className="w-full" onClick={handleRate}>
+                                Enviar Calificación
+                            </Button>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }

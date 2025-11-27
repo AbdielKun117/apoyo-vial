@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import { CheckCircle, Loader2, User, Phone, MessageSquare, RefreshCw, Clock } from 'lucide-react';
+import { CheckCircle, Loader2, User, Phone, MessageSquare, RefreshCw, Clock, XCircle, Star } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { useStore } from '../store/useStore';
 import { supabase } from '../lib/supabase';
@@ -38,9 +38,9 @@ const userIcon = new L.Icon({
     shadowSize: [41, 41]
 });
 
-// Haversine formula to calculate distance in km
+// Haversine formula
 function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Radius of the earth in km
+    const R = 6371;
     const dLat = deg2rad(lat2 - lat1);
     const dLon = deg2rad(lon2 - lon1);
     const a =
@@ -48,8 +48,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
         Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
         Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const d = R * c; // Distance in km
-    return d;
+    return R * c;
 }
 
 function deg2rad(deg) {
@@ -70,15 +69,69 @@ function MapUpdater({ userLocation, helperLocation }) {
 }
 
 export function RequestStatus() {
-    const { currentRequest } = useStore();
+    const { currentRequest, setRequest } = useStore();
     const [status, setStatus] = useState(currentRequest.status || 'searching');
     const [helper, setHelper] = useState(null);
     const [helperLocation, setHelperLocation] = useState(null);
-    const [requestLocation, setRequestLocation] = useState(null); // New state for robust location
+    const [requestLocation, setRequestLocation] = useState(null);
     const [eta, setEta] = useState(null);
     const [loading, setLoading] = useState(false);
 
-    // Function to fetch latest status and helper info
+    // UI States
+    const [showCancelModal, setShowCancelModal] = useState(false);
+    const [cancelReason, setCancelReason] = useState('');
+    const [showRatingModal, setShowRatingModal] = useState(false);
+    const [rating, setRating] = useState(0);
+
+    // 1. Broadcast User Location (Bidirectional Tracking)
+    useEffect(() => {
+        let watchId;
+        let lastUpdate = 0;
+
+        const startTracking = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            if (navigator.geolocation) {
+                watchId = navigator.geolocation.watchPosition(
+                    async (pos) => {
+                        const { latitude, longitude } = pos.coords;
+                        // Update local state for map
+                        // Note: We might prefer using the DB location to be consistent, 
+                        // but for the user's own marker, local is smoother.
+                        // However, for the map to show what the helper sees, we might want to stick to DB or hybrid.
+                        // Let's keep using the one fetched from DB for consistency in 'requestLocation' state,
+                        // BUT we need to send this to DB.
+
+                        const now = Date.now();
+                        if (now - lastUpdate > 5000) {
+                            lastUpdate = now;
+                            await supabase
+                                .from('profiles')
+                                .update({
+                                    current_lat: latitude,
+                                    current_lng: longitude,
+                                    updated_at: new Date().toISOString()
+                                })
+                                .eq('id', user.id);
+                        }
+                    },
+                    (err) => console.error("Location error:", err),
+                    { enableHighAccuracy: true }
+                );
+            }
+        };
+
+        if (status === 'searching' || status === 'found' || status === 'arrived') {
+            startTracking();
+        }
+
+        return () => {
+            if (watchId) navigator.geolocation.clearWatch(watchId);
+        };
+    }, [status]);
+
+    // 2. Fetch Data
     const fetchLatestData = useCallback(async (isBackground = false) => {
         if (!currentRequest.id) return;
 
@@ -96,9 +149,11 @@ export function RequestStatus() {
             if (requestData) {
                 if (requestData.status !== status) {
                     setStatus(requestData.status);
+                    if (requestData.status === 'completed') {
+                        setShowRatingModal(true);
+                    }
                 }
 
-                // Set robust location from DB
                 if (requestData.location_lat && requestData.location_lng) {
                     setRequestLocation({
                         lat: requestData.location_lat,
@@ -113,9 +168,7 @@ export function RequestStatus() {
                         .eq('id', requestData.helper_id)
                         .single();
 
-                    if (helperError) {
-                        console.error("Error fetching helper profile:", helperError);
-                    } else {
+                    if (!helperError) {
                         setHelper(helperData);
                         if (helperData.current_lat && helperData.current_lng) {
                             setHelperLocation({
@@ -133,33 +186,10 @@ export function RequestStatus() {
         }
     }, [currentRequest.id, status]);
 
-    // Calculate ETA whenever locations change
-    useEffect(() => {
-        if (requestLocation && helperLocation) {
-            const dist = calculateDistance(
-                requestLocation.lat,
-                requestLocation.lng,
-                helperLocation.lat,
-                helperLocation.lng
-            );
-            // Assume average speed of 30 km/h
-            const speed = 30;
-            const timeHours = dist / speed;
-            const timeMinutes = Math.ceil(timeHours * 60);
-
-            // Add a small buffer (e.g. 2 mins) for traffic/parking
-            setEta(timeMinutes + 2);
-        }
-    }, [requestLocation, helperLocation]);
-
     useEffect(() => {
         fetchLatestData(false);
+        const intervalId = setInterval(() => fetchLatestData(true), 5000);
 
-        const intervalId = setInterval(() => {
-            fetchLatestData(true);
-        }, 5000); // Poll every 5s for location updates
-
-        // Subscribe to request changes
         const requestSub = supabase
             .channel(`request:${currentRequest.id}`)
             .on('postgres_changes', {
@@ -176,19 +206,65 @@ export function RequestStatus() {
         };
     }, [currentRequest.id, fetchLatestData]);
 
-    const handleCall = () => {
-        if (helper?.phone) {
-            window.location.href = `tel:${helper.phone}`;
+    // 3. ETA Calculation
+    useEffect(() => {
+        if (requestLocation && helperLocation) {
+            const dist = calculateDistance(
+                requestLocation.lat,
+                requestLocation.lng,
+                helperLocation.lat,
+                helperLocation.lng
+            );
+            const speed = 30; // km/h
+            const timeMinutes = Math.ceil((dist / speed) * 60) + 2;
+            setEta(timeMinutes);
+        }
+    }, [requestLocation, helperLocation]);
+
+    // 4. Actions
+    const handleCancel = async () => {
+        if (!cancelReason) return alert("Por favor selecciona una razón");
+
+        try {
+            const { error } = await supabase
+                .from('requests')
+                .update({
+                    status: 'cancelled',
+                    cancel_reason: cancelReason
+                })
+                .eq('id', currentRequest.id);
+
+            if (error) throw error;
+
+            setRequest({}); // Clear store
+            window.location.href = '/role-selection'; // Redirect
+        } catch (error) {
+            alert("Error al cancelar: " + error.message);
         }
     };
 
-    const handleMessage = () => {
-        if (helper?.phone) {
-            const cleanPhone = helper.phone.replace(/\D/g, '');
-            window.open(`https://wa.me/${cleanPhone}`, '_blank');
+    const handleRate = async () => {
+        if (rating === 0) return alert("Por favor selecciona una calificación");
+
+        try {
+            const { error } = await supabase
+                .from('requests')
+                .update({ rating_user: rating })
+                .eq('id', currentRequest.id);
+
+            if (error) throw error;
+
+            setRequest({}); // Clear store
+            window.location.href = '/role-selection';
+        } catch (error) {
+            alert("Error al calificar: " + error.message);
         }
     };
 
+    const handleCall = () => helper?.phone && (window.location.href = `tel:${helper.phone}`);
+    const handleMessage = () => helper?.phone && window.open(`https://wa.me/${helper.phone.replace(/\D/g, '')}`, '_blank');
+
+    // --- RENDER ---
     return (
         <div className="flex flex-col h-[calc(100vh-64px)] relative">
             {/* Map View */}
@@ -200,19 +276,14 @@ export function RequestStatus() {
                         style={{ height: '100%', width: '100%' }}
                     >
                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-
-                        {/* User Location */}
                         <Marker position={[requestLocation.lat, requestLocation.lng]} icon={userIcon}>
                             <Popup>Tu Ubicación</Popup>
                         </Marker>
-
-                        {/* Helper Location */}
                         {helperLocation && (
                             <Marker position={[helperLocation.lat, helperLocation.lng]} icon={helperIcon}>
                                 <Popup>Ayudante</Popup>
                             </Marker>
                         )}
-
                         <MapUpdater userLocation={requestLocation} helperLocation={helperLocation} />
                     </MapContainer>
                 ) : (
@@ -222,7 +293,6 @@ export function RequestStatus() {
                     </div>
                 )}
 
-                {/* Refresh Button */}
                 <div className="absolute top-4 right-4 z-[1000]">
                     <Button variant="secondary" size="sm" onClick={() => fetchLatestData(false)} disabled={loading}>
                         <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -244,10 +314,13 @@ export function RequestStatus() {
                             <h2 className="text-xl font-bold text-gray-800">Buscando ayuda...</h2>
                             <p className="text-gray-500 text-sm">Notificando a conductores cercanos</p>
                         </div>
+                        <Button variant="outline" className="text-red-500 border-red-200 mt-8" onClick={() => setShowCancelModal(true)}>
+                            Cancelar Solicitud
+                        </Button>
                     </div>
                 )}
 
-                {status === 'found' && helper && (
+                {(status === 'found' || status === 'arrived') && helper && (
                     <div className="space-y-6">
                         <div className="text-center border-b pb-4">
                             <div className="flex items-center justify-center space-x-2 text-green-600 mb-1">
@@ -286,9 +359,71 @@ export function RequestStatus() {
                                 <MessageSquare className="w-4 h-4 mr-2" /> WhatsApp
                             </Button>
                         </div>
+
+                        <Button variant="ghost" className="w-full text-red-500 text-sm mt-4" onClick={() => setShowCancelModal(true)}>
+                            Cancelar Servicio
+                        </Button>
+                    </div>
+                )}
+
+                {status === 'cancelled' && (
+                    <div className="text-center py-10">
+                        <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                        <h2 className="text-xl font-bold">Solicitud Cancelada</h2>
+                        <Button className="mt-4" onClick={() => { setRequest({}); window.location.href = '/role-selection'; }}>
+                            Volver al inicio
+                        </Button>
                     </div>
                 )}
             </div>
+
+            {/* Cancel Modal */}
+            {showCancelModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] p-4">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-sm">
+                        <h3 className="font-bold text-lg mb-4">Cancelar Solicitud</h3>
+                        <p className="text-sm text-gray-600 mb-4">¿Por qué deseas cancelar?</p>
+                        <select
+                            className="w-full p-2 border rounded mb-4"
+                            value={cancelReason}
+                            onChange={(e) => setCancelReason(e.target.value)}
+                        >
+                            <option value="">Selecciona una razón</option>
+                            <option value="Ya no necesito ayuda">Ya no necesito ayuda</option>
+                            <option value="Tarda mucho tiempo">Tarda mucho tiempo</option>
+                            <option value="Encontré otra solución">Encontré otra solución</option>
+                            <option value="Otro">Otro</option>
+                        </select>
+                        <div className="flex space-x-2">
+                            <Button variant="outline" className="flex-1" onClick={() => setShowCancelModal(false)}>Volver</Button>
+                            <Button className="flex-1 bg-red-600 hover:bg-red-700" onClick={handleCancel}>Confirmar</Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Rating Modal */}
+            {showRatingModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] p-4">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-sm text-center">
+                        <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-2" />
+                        <h3 className="font-bold text-lg mb-2">¡Servicio Completado!</h3>
+                        <p className="text-gray-600 mb-4">¿Cómo estuvo tu ayudante?</p>
+
+                        <div className="flex justify-center space-x-2 mb-6">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                                <button key={star} onClick={() => setRating(star)}>
+                                    <Star className={`w-8 h-8 ${rating >= star ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />
+                                </button>
+                            ))}
+                        </div>
+
+                        <Button className="w-full" onClick={handleRate}>
+                            Enviar Calificación
+                        </Button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
