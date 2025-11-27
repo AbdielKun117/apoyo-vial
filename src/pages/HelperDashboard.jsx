@@ -374,65 +374,11 @@ export function HelperDashboard() {
 
     // View 2: Searching Mode (Default)
     return (
-        <div className="flex flex-col h-[calc(100vh-64px)] relative">
-            <div className="h-1/2 w-full relative">
-                <MapContainer center={[19.4326, -99.1332]} zoom={12} style={{ height: '100%', width: '100%' }}>
-                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-
-                    <FitBounds requests={requests} userLocation={userLocation} selectedRequest={selectedRequest} />
-
-                    {/* Helper Location (Red) */}
-                    {userLocation && (
-                        <Marker position={[userLocation.lat, userLocation.lng]} icon={redIcon}>
-                            <Popup>Tú (Ayudante)</Popup>
-                        </Marker>
-                    )}
-
-                    {/* Requests (Green) */}
-                    {requests.map(req => (
-                        <Marker
-                            key={req.id}
-                            position={[req.location_lat, req.location_lng]}
-                            icon={greenIcon}
-                            eventHandlers={{
-                                click: () => setSelectedRequest(req),
-                            }}
-                        >
-                            <Popup>
-                                <div className="text-center">
-                                    <p className="font-bold">{req.issue_type}</p>
-                                    <p>{req.profiles?.full_name}</p>
-                                </div>
-                            </Popup>
-                        </Marker>
-                    ))}
-                </MapContainer>
-
-                {/* Manual Refresh Button */}
-                <div className="absolute top-4 right-4 z-[1000]">
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        className="bg-white shadow-md hover:bg-gray-100 text-gray-700"
-                        onClick={() => fetchRequests(false)}
-                        disabled={loading}
-                    >
-                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                    </Button>
-                </div>
-
-                {selectedRequest && (
-                    <div className="absolute bottom-4 left-4 right-4 bg-white p-4 rounded-lg shadow-xl z-[1000] border-l-4 border-primary animate-in slide-in-from-bottom">
-                        <div className="flex justify-between items-start mb-2">
-                            <div>
-                                <h3 className="font-bold text-lg text-gray-800">{selectedRequest.issue_type}</h3>
-                                <p className="text-gray-600">{selectedRequest.profiles?.full_name}</p>
-                                {selectedRequest.description && (
-                                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">"{selectedRequest.description}"</p>
-                                )}
-                            </div>
-                            <button onClick={() => setSelectedRequest(null)} className="text-gray-400 hover:text-gray-600">✕</button>
-                        </div>
+                                )
+}
+                            </div >
+    <button onClick={() => setSelectedRequest(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+                        </div >
                         <div className="flex items-center text-sm text-gray-500 mb-4">
                             <Clock className="w-4 h-4 mr-1" />
                             <span>Tiempo estimado: Calculando...</span>
@@ -444,44 +390,44 @@ export function HelperDashboard() {
                         >
                             {accepting ? 'Aceptando...' : 'Aceptar Ayuda'}
                         </Button>
-                    </div>
+                    </div >
                 )}
-            </div>
+            </div >
 
-            <div className="flex-1 bg-white p-4 overflow-y-auto">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-bold text-gray-800">Solicitudes Activas ({requests.length})</h2>
-                </div>
-
-                {loading && requests.length === 0 ? (
-                    <p className="text-center text-gray-500">Cargando...</p>
-                ) : requests.length === 0 ? (
-                    <p className="text-center text-gray-500">No hay solicitudes pendientes.</p>
-                ) : (
-                    <div className="space-y-4">
-                        {requests.map((req) => (
-                            <div
-                                key={req.id}
-                                className={`border rounded-lg p-4 shadow-sm flex justify-between items-center cursor-pointer transition-colors ${selectedRequest?.id === req.id ? 'border-primary bg-yellow-50' : 'border-gray-200 hover:bg-gray-50'}`}
-                                onClick={() => setSelectedRequest(req)}
-                            >
-                                <div className="flex items-center space-x-4">
-                                    <div className="bg-yellow-100 p-3 rounded-full">
-                                        <AlertTriangle className="w-6 h-6 text-yellow-600" />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-bold text-gray-800">{req.issue_type}</h3>
-                                        <p className="text-sm text-gray-500">{req.profiles?.full_name}</p>
-                                    </div>
-                                </div>
-                                <div className="text-primary">
-                                    <Navigation className="w-5 h-5" />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
+    <div className="flex-1 bg-white p-4 overflow-y-auto">
+        <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-bold text-gray-800">Solicitudes Activas ({requests.length})</h2>
         </div>
+
+        {loading && requests.length === 0 ? (
+            <p className="text-center text-gray-500">Cargando...</p>
+        ) : requests.length === 0 ? (
+            <p className="text-center text-gray-500">No hay solicitudes pendientes.</p>
+        ) : (
+            <div className="space-y-4">
+                {requests.map((req) => (
+                    <div
+                        key={req.id}
+                        className={`border rounded-lg p-4 shadow-sm flex justify-between items-center cursor-pointer transition-colors ${selectedRequest?.id === req.id ? 'border-primary bg-yellow-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                        onClick={() => setSelectedRequest(req)}
+                    >
+                        <div className="flex items-center space-x-4">
+                            <div className="bg-yellow-100 p-3 rounded-full">
+                                <AlertTriangle className="w-6 h-6 text-yellow-600" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-800">{req.issue_type}</h3>
+                                <p className="text-sm text-gray-500">{req.profiles?.full_name}</p>
+                            </div>
+                        </div>
+                        <div className="text-primary">
+                            <Navigation className="w-5 h-5" />
+                        </div>
+                    </div>
+                ))}
+            </div>
+        )}
+    </div>
+        </div >
     );
 }
