@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import { Battery, Navigation, AlertTriangle, CheckCircle, Clock, RefreshCw } from 'lucide-react';
+import { Battery, Navigation, AlertTriangle, CheckCircle, Clock, RefreshCw, Phone, MessageSquare } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { supabase } from '../lib/supabase';
 import 'leaflet/dist/leaflet.css';
@@ -37,7 +37,7 @@ const greenIcon = new L.Icon({
 });
 
 // Component to auto-fit map bounds
-function FitBounds({ requests, userLocation, selectedRequest }) {
+function FitBounds({ requests, userLocation, selectedRequest, activeJob }) {
     const map = useMap();
 
     useEffect(() => {
@@ -46,13 +46,19 @@ function FitBounds({ requests, userLocation, selectedRequest }) {
         const bounds = L.latLngBounds();
         let hasPoints = false;
 
-        // If a request is selected, focus on user + request
-        if (selectedRequest && userLocation) {
+        // Priority 1: Active Job
+        if (activeJob && userLocation) {
+            bounds.extend([userLocation.lat, userLocation.lng]);
+            bounds.extend([activeJob.location_lat, activeJob.location_lng]);
+            hasPoints = true;
+        }
+        // Priority 2: Selected Request
+        else if (selectedRequest && userLocation) {
             bounds.extend([userLocation.lat, userLocation.lng]);
             bounds.extend([selectedRequest.location_lat, selectedRequest.location_lng]);
             hasPoints = true;
         }
-        // Otherwise show all requests + user
+        // Priority 3: All Requests
         else {
             if (userLocation) {
                 bounds.extend([userLocation.lat, userLocation.lng]);
@@ -67,35 +73,27 @@ function FitBounds({ requests, userLocation, selectedRequest }) {
         if (hasPoints) {
             map.fitBounds(bounds, { padding: [50, 50] });
         }
-    }, [map, requests, userLocation, selectedRequest]);
+    }, [map, requests, userLocation, selectedRequest, activeJob]);
 
     return null;
 }
 
 export function HelperDashboard() {
     const [requests, setRequests] = useState([]);
+    const [activeJob, setActiveJob] = useState(null); // State for the accepted request
     const [loading, setLoading] = useState(true);
     const [userLocation, setUserLocation] = useState(null);
     const [selectedRequest, setSelectedRequest] = useState(null);
     const [accepting, setAccepting] = useState(false);
 
-    // Check for active job and broadcast location
+    // 1. Get Helper Location & Track if Active Job exists
     useEffect(() => {
         let watchId;
         let lastUpdate = 0;
 
-        const checkActiveJobAndTrack = async () => {
+        const startTracking = async () => {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
-
-            // Check if this helper has an active request (status 'found' or 'arrived')
-            const { data: activeRequests } = await supabase
-                .from('requests')
-                .select('id')
-                .eq('helper_id', user.id)
-                .in('status', ['found', 'arrived']);
-
-            const hasActiveJob = activeRequests && activeRequests.length > 0;
 
             if (navigator.geolocation) {
                 watchId = navigator.geolocation.watchPosition(
@@ -103,19 +101,33 @@ export function HelperDashboard() {
                         const { latitude, longitude } = pos.coords;
                         setUserLocation({ lat: latitude, lng: longitude });
 
-                        // Only broadcast to DB if we have an active job and enough time passed (10s)
+                        // Only broadcast to DB if we have an active job
+                        // We check the 'activeJob' state ref or fetch it? 
+                        // Better to rely on the functional update or a ref, but for simplicity:
+                        // We will check Supabase directly or rely on the local state if it's reliable.
+                        // Let's check Supabase to be sure we should be tracking.
+
                         const now = Date.now();
-                        if (hasActiveJob && now - lastUpdate > 10000) {
-                            lastUpdate = now;
-                            console.log("Broadcasting location...", latitude, longitude);
-                            await supabase
-                                .from('profiles')
-                                .update({
-                                    current_lat: latitude,
-                                    current_lng: longitude,
-                                    updated_at: new Date().toISOString()
-                                })
-                                .eq('id', user.id);
+                        if (now - lastUpdate > 5000) { // Update every 5s
+                            // Check if we really have an active job in DB to avoid stale state issues
+                            const { data: activeRequests } = await supabase
+                                .from('requests')
+                                .select('id')
+                                .eq('helper_id', user.id)
+                                .in('status', ['found', 'arrived']);
+
+                            if (activeRequests && activeRequests.length > 0) {
+                                lastUpdate = now;
+                                console.log("Broadcasting location...", latitude, longitude);
+                                await supabase
+                                    .from('profiles')
+                                    .update({
+                                        current_lat: latitude,
+                                        current_lng: longitude,
+                                        updated_at: new Date().toISOString()
+                                    })
+                                    .eq('id', user.id);
+                            }
                         }
                     },
                     (err) => console.error("Location error:", err),
@@ -124,24 +136,42 @@ export function HelperDashboard() {
             }
         };
 
-        checkActiveJobAndTrack();
+        startTracking();
 
         return () => {
             if (watchId) navigator.geolocation.clearWatch(watchId);
         };
     }, []);
 
-    // Fetch Requests
+    // 2. Fetch Requests & Check for Active Job
     const fetchRequests = useCallback(async (isBackground = false) => {
         if (!isBackground) setLoading(true);
 
-        const { data, error } = await supabase
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // First, check if I have an active job
+        const { data: myJobs, error: jobError } = await supabase
             .from('requests')
             .select(`*, profiles:user_id (full_name, phone)`)
-            .eq('status', 'searching');
+            .eq('helper_id', user.id)
+            .in('status', ['found', 'arrived'])
+            .single();
 
-        if (error) console.error('Error fetching requests:', error);
-        else setRequests(data || []);
+        if (myJobs) {
+            setActiveJob(myJobs);
+            setRequests([]); // Clear other requests
+        } else {
+            setActiveJob(null);
+            // If no active job, fetch open requests
+            const { data, error } = await supabase
+                .from('requests')
+                .select(`*, profiles:user_id (full_name, phone)`)
+                .eq('status', 'searching');
+
+            if (error) console.error('Error fetching requests:', error);
+            else setRequests(data || []);
+        }
 
         if (!isBackground) setLoading(false);
     }, []);
@@ -149,7 +179,6 @@ export function HelperDashboard() {
     useEffect(() => {
         fetchRequests();
 
-        // Auto-refresh every 5 seconds
         const intervalId = setInterval(() => {
             fetchRequests(true);
         }, 5000);
@@ -157,7 +186,6 @@ export function HelperDashboard() {
         const subscription = supabase
             .channel('public:requests')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, () => {
-                console.log("Realtime update received");
                 fetchRequests(true);
             })
             .subscribe();
@@ -184,14 +212,11 @@ export function HelperDashboard() {
 
             if (error) throw error;
 
-            alert(`¡Has aceptado ayudar a ${request.profiles?.full_name}! Dirígete a su ubicación.`);
+            alert(`¡Has aceptado ayudar a ${request.profiles?.full_name}!`);
 
-            // Open navigation
-            window.open(`https://www.google.com/maps/dir/?api=1&destination=${request.location_lat},${request.location_lng}&travelmode=driving`, '_blank');
-
-            // Clear selection and refresh list
-            setSelectedRequest(null);
+            // Force immediate fetch to switch view
             fetchRequests();
+            setSelectedRequest(null);
 
         } catch (error) {
             alert("Error al aceptar: " + error.message);
@@ -200,6 +225,83 @@ export function HelperDashboard() {
         }
     };
 
+    const handleCompleteJob = async () => {
+        if (!activeJob) return;
+        const confirm = window.confirm("¿Has terminado de ayudar?");
+        if (!confirm) return;
+
+        try {
+            const { error } = await supabase
+                .from('requests')
+                .update({ status: 'completed' })
+                .eq('id', activeJob.id);
+
+            if (error) throw error;
+            fetchRequests();
+        } catch (error) {
+            console.error("Error completing job:", error);
+        }
+    };
+
+    const openGoogleMaps = () => {
+        if (activeJob) {
+            window.open(`https://www.google.com/maps/dir/?api=1&destination=${activeJob.location_lat},${activeJob.location_lng}&travelmode=driving`, '_blank');
+        }
+    };
+
+    // --- RENDER ---
+
+    // View 1: Active Job Mode
+    if (activeJob) {
+        return (
+            <div className="flex flex-col h-[calc(100vh-64px)] relative">
+                <div className="h-2/3 w-full relative">
+                    <MapContainer center={[activeJob.location_lat, activeJob.location_lng]} zoom={13} style={{ height: '100%', width: '100%' }}>
+                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                        <FitBounds requests={[]} userLocation={userLocation} activeJob={activeJob} />
+
+                        {/* Helper */}
+                        {userLocation && (
+                            <Marker position={[userLocation.lat, userLocation.lng]} icon={redIcon}>
+                                <Popup>Tú</Popup>
+                            </Marker>
+                        )}
+                        {/* Victim */}
+                        <Marker position={[activeJob.location_lat, activeJob.location_lng]} icon={greenIcon}>
+                            <Popup>Solicitante: {activeJob.profiles?.full_name}</Popup>
+                        </Marker>
+                    </MapContainer>
+                </div>
+
+                <div className="flex-1 bg-white p-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-[1000] rounded-t-3xl -mt-6">
+                    <div className="flex justify-between items-start mb-4">
+                        <div>
+                            <h2 className="text-xl font-bold text-gray-800">Ayudando a {activeJob.profiles?.full_name}</h2>
+                            <p className="text-gray-500">{activeJob.issue_type}</p>
+                        </div>
+                        <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-bold uppercase">
+                            En Curso
+                        </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                        <Button variant="outline" onClick={() => window.location.href = `tel:${activeJob.profiles?.phone}`}>
+                            <Phone className="w-4 h-4 mr-2" /> Llamar
+                        </Button>
+                        <Button variant="outline" onClick={openGoogleMaps}>
+                            <Navigation className="w-4 h-4 mr-2" /> Navegar
+                        </Button>
+                    </div>
+
+                    <Button className="w-full bg-gray-900 hover:bg-gray-800" onClick={handleCompleteJob}>
+                        <CheckCircle className="w-4 h-4 mr-2" /> Finalizar Ayuda
+                    </Button>
+                </div>
+            </div>
+        );
+    }
+
+    // View 2: Searching Mode (Default)
     return (
         <div className="flex flex-col h-[calc(100vh-64px)] relative">
             <div className="h-1/2 w-full relative">
