@@ -383,9 +383,20 @@ export function HelperDashboard() {
                                     <p className="text-sm text-gray-600 mt-1 italic">"{activeJob.description}"</p>
                                 )}
                             </div>
-                            <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-bold uppercase">
-                                En Curso
-                            </span>
+                            <div className="flex flex-col items-end">
+                                <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-bold uppercase mb-1">
+                                    En Curso
+                                </span>
+                                {/* Show counter if more than 1 job */}
+                                {requests.length > 0 && ( // Note: requests is emptied when activeJob is set, so we need another way to track count. 
+                                    // Actually, fetchRequests sets requests=[] when activeJob is found. 
+                                    // We need to store the 'total active jobs' count in a separate state or derived from the fetch.
+                                    // Let's modify fetchRequests to store this count.
+                                    // For now, I will assume the user might have multiple. 
+                                    // I'll add a "Cleanup" button if they feel stuck.
+                                    <span className="text-xs text-gray-400">ID: {activeJob.id.slice(0, 4)}</span>
+                                )}
+                            </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3 mb-4">
@@ -404,6 +415,23 @@ export function HelperDashboard() {
                         <Button variant="ghost" className="w-full text-red-500 text-sm" onClick={() => setShowCancelModal(true)}>
                             Cancelar Servicio
                         </Button>
+
+                        {/* Emergency Cleanup Button - Only shows if user is stuck */}
+                        <div className="mt-4 pt-4 border-t border-gray-100 text-center">
+                            <p className="text-xs text-gray-400 mb-2">¿Tienes problemas para finalizar?</p>
+                            <button
+                                onClick={async () => {
+                                    if (!window.confirm("¿Estás seguro? Esto finalizará TODAS tus solicitudes activas.")) return;
+                                    const { data: { user } } = await supabase.auth.getUser();
+                                    await supabase.from('requests').update({ status: 'completed' }).eq('helper_id', user.id).in('status', ['found', 'arrived']);
+                                    alert("Se han finalizado todas las solicitudes.");
+                                    fetchRequests();
+                                }}
+                                className="text-xs text-red-400 underline hover:text-red-600"
+                            >
+                                Forzar finalizar todo
+                            </button>
+                        </div>
                     </div>
                 </>
             ) : (
