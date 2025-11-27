@@ -138,51 +138,6 @@ export function HelperDashboard() {
     }, []);
 
     // 2. Fetch Requests & Check for Active Job
-    const fetchRequests = useCallback(async (isBackground = false) => {
-        if (!isBackground) setLoading(true);
-
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        // Check for active job
-        const { data: myJobs, error: jobError } = await supabase
-            .from('requests')
-            .select(`*, profiles:user_id (full_name, phone)`)
-            .eq('helper_id', user.id)
-            .in('status', ['found', 'arrived'])
-            .maybeSingle();
-
-        if (myJobs) {
-            setActiveJob(myJobs);
-            setRequests([]);
-
-            // Fetch victim's live location
-            const { data: victimProfile } = await supabase
-                .from('profiles')
-                .select('current_lat, current_lng')
-                .eq('id', myJobs.user_id)
-                .single();
-
-            if (victimProfile && victimProfile.current_lat) {
-                setVictimLocation({ lat: victimProfile.current_lat, lng: victimProfile.current_lng });
-            }
-
-        } else {
-            setActiveJob(null);
-            setVictimLocation(null);
-
-            const { data, error } = await supabase
-                .from('requests')
-                .select(`*, profiles:user_id (full_name, phone)`)
-                .eq('status', 'searching');
-
-            if (error) console.error('Error fetching requests:', error);
-            else setRequests(data || []);
-        }
-
-        if (!isBackground) setLoading(false);
-    }, []);
-
     useEffect(() => {
         fetchRequests();
         const intervalId = setInterval(() => fetchRequests(true), 5000);
