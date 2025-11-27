@@ -361,16 +361,15 @@ export function HelperDashboard() {
                                     <Popup>Tú</Popup>
                                 </Marker>
                             )}
-                            {/* Victim (Live or Static) */}
-                            {victimLocation ? (
-                                <Marker position={[victimLocation.lat, victimLocation.lng]} icon={greenIcon}>
-                                    <Popup>Solicitante (En vivo)</Popup>
-                                </Marker>
-                            ) : (
-                                <Marker position={[activeJob.location_lat, activeJob.location_lng]} icon={greenIcon}>
-                                    <Popup>Solicitante (Ubicación inicial)</Popup>
-                                </Marker>
-                            )}
+                            {/* Victim - Always show the Request Location (The Car/Pin) */}
+                            <Marker position={[activeJob.location_lat, activeJob.location_lng]} icon={greenIcon}>
+                                <Popup>
+                                    <div className="text-center">
+                                        <p className="font-bold">Ubicación del Incidente</p>
+                                        <p className="text-xs text-gray-500">Solicitante: {activeJob.profiles?.full_name}</p>
+                                    </div>
+                                </Popup>
+                            </Marker>
                         </MapContainer>
                     </div>
 
