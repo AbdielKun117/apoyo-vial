@@ -24,6 +24,23 @@ export function RequestConfirmation() {
                 return;
             }
 
+            // Insert into Supabase
+            const { data, error } = await supabase
+                .from('requests')
+                .insert([
+                    {
+                        user_id: authUser.id,
+                        location_lat: currentRequest.location.lat,
+                        location_lng: currentRequest.location.lng,
+                        issue_type: currentRequest.issueType.label,
+                        description: currentRequest.description || '',
+                        status: 'searching'
+                    }
+                ])
+                .select();
+
+            if (error) throw error;
+
             // Update local store with the real ID from DB
             setRequest({
                 id: data[0].id,
@@ -58,6 +75,9 @@ export function RequestConfirmation() {
                     <div>
                         <p className="text-xs text-red-500 font-bold uppercase">Emergencia</p>
                         <p className="font-bold text-gray-800">{currentRequest.issueType.label}</p>
+                        {currentRequest.description && (
+                            <p className="text-sm text-gray-600 mt-1 italic">"{currentRequest.description}"</p>
+                        )}
                     </div>
                 </div>
 
