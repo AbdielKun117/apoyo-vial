@@ -42,6 +42,7 @@ export function RequestHelp() {
     const [position, setPosition] = useState({ lat: 19.4326, lng: -99.1332 });
     const [issueType, setIssueType] = useState(null);
     const [manualLocation, setManualLocation] = useState(false);
+    const [description, setDescription] = useState('');
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -128,6 +129,10 @@ export function RequestHelp() {
     // Re-implementing the navigation to Confirmation screen instead of direct save
     const handleGoToConfirmation = () => {
         if (!position || !issueType) return;
+        if (issueType === 'other' && !description.trim()) {
+            alert('Por favor describe el problema');
+            return;
+        }
 
         const issue = issues.find(i => i.id === issueType);
 
@@ -135,6 +140,7 @@ export function RequestHelp() {
         setRequest({
             location: position,
             issueType: issue,
+            description: description,
             status: 'confirming'
         });
 
@@ -189,6 +195,19 @@ export function RequestHelp() {
                         );
                     })}
                 </div>
+
+                {issueType === 'other' && (
+                    <div className="mb-6 animate-in fade-in slide-in-from-top-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Describe el problema:</label>
+                        <textarea
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                            rows="3"
+                            placeholder="Ej: El coche hace un ruido extraño y se detuvo..."
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                        ></textarea>
+                    </div>
+                )}
 
                 <Button
                     className="w-full h-12 text-lg bg-red-600 hover:bg-red-700 text-white shadow-lg animate-pulse"

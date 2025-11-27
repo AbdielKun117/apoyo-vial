@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { CheckCircle, Loader2, User, Phone, MessageSquare, RefreshCw, Clock, XCircle, Star } from 'lucide-react';
 import { Button } from '../components/ui/Button';
@@ -69,6 +70,7 @@ function MapUpdater({ userLocation, helperLocation }) {
 }
 
 export function RequestStatus() {
+    const navigate = useNavigate();
     const { currentRequest, setRequest } = useStore();
     const [status, setStatus] = useState(currentRequest.status || 'searching');
     const [helper, setHelper] = useState(null);
@@ -80,6 +82,7 @@ export function RequestStatus() {
     // UI States
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [cancelReason, setCancelReason] = useState('');
+    const [cancelDescription, setCancelDescription] = useState(''); // New state for custom description
     const [showRatingModal, setShowRatingModal] = useState(false);
     const [rating, setRating] = useState(0);
 
@@ -96,13 +99,6 @@ export function RequestStatus() {
                 watchId = navigator.geolocation.watchPosition(
                     async (pos) => {
                         const { latitude, longitude } = pos.coords;
-                        // Update local state for map
-                        // Note: We might prefer using the DB location to be consistent, 
-                        // but for the user's own marker, local is smoother.
-                        // However, for the map to show what the helper sees, we might want to stick to DB or hybrid.
-                        // Let's keep using the one fetched from DB for consistency in 'requestLocation' state,
-                        // BUT we need to send this to DB.
-
                         const now = Date.now();
                         if (now - lastUpdate > 5000) {
                             lastUpdate = now;
@@ -224,20 +220,23 @@ export function RequestStatus() {
     // 4. Actions
     const handleCancel = async () => {
         if (!cancelReason) return alert("Por favor selecciona una razón");
+        if (cancelReason === 'Otro' && !cancelDescription.trim()) return alert("Por favor describe la razón");
+
+        const finalReason = cancelReason === 'Otro' ? `Otro: ${cancelDescription}` : cancelReason;
 
         try {
             const { error } = await supabase
                 .from('requests')
                 .update({
                     status: 'cancelled',
-                    cancel_reason: cancelReason
+                    cancel_reason: finalReason
                 })
                 .eq('id', currentRequest.id);
 
             if (error) throw error;
 
             setRequest({}); // Clear store
-            window.location.href = '/role-selection'; // Redirect
+            navigate('/role-selection'); // Use navigate
         } catch (error) {
             alert("Error al cancelar: " + error.message);
         }
@@ -255,7 +254,7 @@ export function RequestStatus() {
             if (error) throw error;
 
             setRequest({}); // Clear store
-            window.location.href = '/role-selection';
+            navigate('/role-selection');
         } catch (error) {
             alert("Error al calificar: " + error.message);
         }
@@ -370,7 +369,7 @@ export function RequestStatus() {
                     <div className="text-center py-10">
                         <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
                         <h2 className="text-xl font-bold">Solicitud Cancelada</h2>
-                        <Button className="mt-4" onClick={() => { setRequest({}); window.location.href = '/role-selection'; }}>
+                        <Button className="mt-4" onClick={() => { setRequest({}); navigate('/role-selection'); }}>
                             Volver al inicio
                         </Button>
                     </div>
@@ -394,6 +393,16 @@ export function RequestStatus() {
                             <option value="Encontré otra solución">Encontré otra solución</option>
                             <option value="Otro">Otro</option>
                         </select>
+
+                        {cancelReason === 'Otro' && (
+                            <textarea
+                                className="w-full p-2 border rounded mb-4"
+                                placeholder="Describe la razón..."
+                                value={cancelDescription}
+                                onChange={(e) => setCancelDescription(e.target.value)}
+                            ></textarea>
+                        )}
+
                         <div className="flex space-x-2">
                             <Button variant="outline" className="flex-1" onClick={() => setShowCancelModal(false)}>Volver</Button>
                             <Button className="flex-1 bg-red-600 hover:bg-red-700" onClick={handleCancel}>Confirmar</Button>

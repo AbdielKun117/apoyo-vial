@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { Battery, Navigation, AlertTriangle, CheckCircle, Clock, RefreshCw, Phone, MessageSquare, XCircle, Star } from 'lucide-react';
 import { Button } from '../components/ui/Button';
@@ -79,6 +80,7 @@ function FitBounds({ requests, userLocation, selectedRequest, activeJob, victimL
 }
 
 export function HelperDashboard() {
+    const navigate = useNavigate();
     const [requests, setRequests] = useState([]);
     const [activeJob, setActiveJob] = useState(null);
     const [victimLocation, setVictimLocation] = useState(null);
@@ -90,6 +92,7 @@ export function HelperDashboard() {
     // UI States
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [cancelReason, setCancelReason] = useState('');
+    const [cancelDescription, setCancelDescription] = useState('');
     const [showRatingModal, setShowRatingModal] = useState(false);
     const [rating, setRating] = useState(0);
 
@@ -110,13 +113,6 @@ export function HelperDashboard() {
 
                         const now = Date.now();
                         if (now - lastUpdate > 5000) {
-                            // Check active job status via ref or just broadcast if we are in "Mission Mode" (activeJob state)
-                            // Since this effect runs once, we can't see 'activeJob' state updates easily without adding it to dependency.
-                            // But adding it to dependency restarts the watcher.
-                            // Instead, we can check DB or just broadcast if we are logged in.
-                            // Broadcasting always is fine for a helper app, or we can check the 'requests' table.
-
-                            // For efficiency, let's just broadcast.
                             lastUpdate = now;
                             await supabase
                                 .from('profiles')
@@ -154,7 +150,7 @@ export function HelperDashboard() {
             .select(`*, profiles:user_id (full_name, phone)`)
             .eq('helper_id', user.id)
             .in('status', ['found', 'arrived'])
-            .maybeSingle(); // Use maybeSingle to avoid errors if 0 or >1 (should be 0 or 1)
+            .maybeSingle();
 
         if (myJobs) {
             setActiveJob(myJobs);
@@ -222,7 +218,7 @@ export function HelperDashboard() {
             if (error) throw error;
 
             alert(`¡Has aceptado ayudar a ${request.profiles?.full_name}!`);
-            fetchRequests();
+            fetchRequests(); // This should trigger activeJob detection
             setSelectedRequest(null);
 
         } catch (error) {
@@ -244,7 +240,7 @@ export function HelperDashboard() {
                 .eq('id', activeJob.id);
 
             if (error) throw error;
-            setShowRatingModal(true); // Show rating instead of just fetching
+            setShowRatingModal(true);
         } catch (error) {
             console.error("Error completing job:", error);
         }
@@ -252,20 +248,23 @@ export function HelperDashboard() {
 
     const handleCancel = async () => {
         if (!cancelReason) return alert("Por favor selecciona una razón");
+        if (cancelReason === 'Otro' && !cancelDescription.trim()) return alert("Por favor describe la razón");
+
+        const finalReason = cancelReason === 'Otro' ? `Otro: ${cancelDescription}` : cancelReason;
 
         try {
             const { error } = await supabase
                 .from('requests')
                 .update({
                     status: 'cancelled',
-                    cancel_reason: cancelReason
+                    cancel_reason: finalReason
                 })
                 .eq('id', activeJob.id);
 
             if (error) throw error;
 
             setShowCancelModal(false);
-            fetchRequests(); // Should return to dashboard
+            fetchRequests();
         } catch (error) {
             alert("Error al cancelar: " + error.message);
         }
@@ -283,7 +282,7 @@ export function HelperDashboard() {
             if (error) throw error;
 
             setShowRatingModal(false);
-            fetchRequests(); // Back to dashboard
+            fetchRequests();
         } catch (error) {
             alert("Error al calificar: " + error.message);
         }
@@ -330,6 +329,9 @@ export function HelperDashboard() {
                         <div>
                             <h2 className="text-xl font-bold text-gray-800">Ayudando a {activeJob.profiles?.full_name}</h2>
                             <p className="text-gray-500">{activeJob.issue_type}</p>
+                            {activeJob.description && (
+                                <p className="text-sm text-gray-600 mt-1 italic">"{activeJob.description}"</p>
+                            )}
                         </div>
                         <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-bold uppercase">
                             En Curso
@@ -371,6 +373,16 @@ export function HelperDashboard() {
                                 <option value="Zona peligrosa">Zona peligrosa</option>
                                 <option value="Otro">Otro</option>
                             </select>
+
+                            {cancelReason === 'Otro' && (
+                                <textarea
+                                    className="w-full p-2 border rounded mb-4"
+                                    placeholder="Describe la razón..."
+                                    value={cancelDescription}
+                                    onChange={(e) => setCancelDescription(e.target.value)}
+                                ></textarea>
+                            )}
+
                             <div className="flex space-x-2">
                                 <Button variant="outline" className="flex-1" onClick={() => setShowCancelModal(false)}>Volver</Button>
                                 <Button className="flex-1 bg-red-600 hover:bg-red-700" onClick={handleCancel}>Confirmar</Button>
@@ -460,6 +472,9 @@ export function HelperDashboard() {
                             <div>
                                 <h3 className="font-bold text-lg text-gray-800">{selectedRequest.issue_type}</h3>
                                 <p className="text-gray-600">{selectedRequest.profiles?.full_name}</p>
+                                {selectedRequest.description && (
+                                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">"{selectedRequest.description}"</p>
+                                )}
                             </div>
                             <button onClick={() => setSelectedRequest(null)} className="text-gray-400 hover:text-gray-600">✕</button>
                         </div>
