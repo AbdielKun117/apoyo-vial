@@ -6,7 +6,15 @@ export function Layout() {
             <header className="bg-secondary text-white p-4 shadow-md sticky top-0 z-50">
                 <div className="container mx-auto flex justify-between items-center">
                     <h1 className="text-xl font-bold text-primary">Apoyo Vial</h1>
-                    {/* Navigation will go here */}
+                    <button
+                        onClick={async () => {
+                            await import('../../lib/supabase').then(m => m.supabase.auth.signOut());
+                            window.location.href = '/';
+                        }}
+                        className="text-sm bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-white font-bold transition-colors"
+                    >
+                        Salir
+                    </button>
                 </div>
             </header>
 

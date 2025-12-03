@@ -14,6 +14,17 @@ export function Login() {
     const [isSignUp, setIsSignUp] = useState(false);
     const [error, setError] = useState(null);
 
+    // Auto-redirect if already logged in
+    useEffect(() => {
+        const checkSession = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                navigate('/role-selection');
+            }
+        };
+        checkSession();
+    }, [navigate]);
+
     const handleAuth = async (e) => {
         e.preventDefault();
         setLoading(true);
