@@ -19,7 +19,7 @@ export function Login() {
         const checkSession = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             if (session) {
-                navigate('/role-selection');
+                navigate('/role-selection', { replace: true });
             }
         };
         checkSession();
