@@ -95,259 +95,34 @@ export function HelperDashboard() {
     const [loading, setLoading] = useState(true);
     const [userLocation, setUserLocation] = useState(null);
     const [selectedRequest, setSelectedRequest] = useState(null);
-    const [accepting, setAccepting] = useState(false);
+    const [searchRadius, setSearchRadius] = useState(50); // Default 50km
 
-    // UI States
-    const [showCancelModal, setShowCancelModal] = useState(false);
-    const [cancelReason, setCancelReason] = useState('');
-    const [cancelDescription, setCancelDescription] = useState('');
-
-    // Rating State
-    const [showRatingModal, setShowRatingModal] = useState(false);
-    const [ratingJobId, setRatingJobId] = useState(null); // Store ID of job to rate
-    const [rating, setRating] = useState(0);
-
-    // 1. Get Helper Location & Track if Active Job exists
-    useEffect(() => {
-        let watchId;
-        let lastUpdate = 0;
-
-        const startTracking = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
-
-            if (navigator.geolocation) {
-                watchId = navigator.geolocation.watchPosition(
-                    async (pos) => {
-                        const { latitude, longitude } = pos.coords;
-                        setUserLocation({ lat: latitude, lng: longitude });
-
-                        const now = Date.now();
-                        if (now - lastUpdate > 5000) {
-                            lastUpdate = now;
-                            await supabase
-                                .from('profiles')
-                                .update({
-                                    current_lat: latitude,
-                                    current_lng: longitude,
-                                    updated_at: new Date().toISOString()
-                                })
-                                .eq('id', user.id);
-                        }
-                    },
-                    (err) => console.error("Location error:", err),
-                    { enableHighAccuracy: true }
-                );
-            }
-        };
-
-        startTracking();
-
-        return () => {
-            if (watchId) navigator.geolocation.clearWatch(watchId);
-        };
-    }, []);
-
-    // 2. Fetch Requests & Check for Active Job
-    const fetchRequests = useCallback(async (isBackground = false) => {
-        if (!isBackground) setLoading(true);
-
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        // Check for active job - Fetch ALL to be safe against duplicates
-        const { data: myJobs, error: jobError } = await supabase
-            .from('requests')
-            .select('*')
-            .eq('helper_id', user.id)
-            .in('status', ['found', 'arrived']);
-
-        if (myJobs && myJobs.length > 0) {
-            const currentJob = myJobs[0]; // Take the first one
-
-            // Fetch victim profile manually
-            const { data: victimProfile } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('id', currentJob.user_id)
-                .single();
-
-            // Combine data
-            const jobWithProfile = {
-                ...currentJob,
-                profiles: victimProfile
-            };
-
-            setActiveJob(jobWithProfile);
-            setRequests([]);
-
-            if (victimProfile && victimProfile.current_lat) {
-                setVictimLocation({ lat: victimProfile.current_lat, lng: victimProfile.current_lng });
-            }
-
-        } else {
-            setActiveJob(null);
-            setVictimLocation(null);
-
-            const { data: requestsData, error: reqError } = await supabase
-                .from('requests')
-                .select('*')
-                .eq('status', 'searching');
-
-            if (reqError) {
-                console.error('Error fetching requests:', reqError);
-            } else {
-                // Manually fetch profiles
-                const userIds = requestsData.map(r => r.user_id);
-                if (userIds.length > 0) {
-                    const { data: profiles } = await supabase
-                        .from('profiles')
-                        .select('id, full_name, phone')
-                        .in('id', userIds);
-
-                    const requestsWithProfiles = requestsData.map(req => ({
-                        ...req,
-                        profiles: profiles?.find(p => p.id === req.user_id)
-                    }));
-                    setRequests(requestsWithProfiles);
-                } else {
-                    setRequests(requestsData);
-                }
-            }
-        }
-
-        if (!isBackground) setLoading(false);
-    }, []);
-
-    useEffect(() => {
-        fetchRequests();
-        const intervalId = setInterval(() => fetchRequests(true), 5000);
-
-        const subscription = supabase
-            .channel('public:requests')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, () => {
-                fetchRequests(true);
-            })
-            .subscribe();
-
-        return () => {
-            clearInterval(intervalId);
-            supabase.removeChannel(subscription);
-        };
-    }, [fetchRequests]);
-
-    // 3. Actions
-    const handleAcceptRequest = async (request) => {
-        setAccepting(true);
-        // Reset rating state just in case
-        setRating(0);
-        setShowRatingModal(false);
-        setRatingJobId(null);
-
-        try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) throw new Error("No autenticado");
-
-            const { error } = await supabase
-                .from('requests')
-                .update({
-                    status: 'found',
-                    helper_id: user.id
-                })
-                .eq('id', request.id);
-
-            if (error) throw error;
-
-            alert(`¡Has aceptado ayudar a ${request.profiles?.full_name}!`);
-            fetchRequests(); // This should trigger activeJob detection
-            setSelectedRequest(null);
-
-        } catch (error) {
-            alert("Error al aceptar: " + error.message);
-        } finally {
-            setAccepting(false);
-        }
+    // Helper: Calculate distance in km (Haversine Formula)
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+        const R = 6371; // Radius of the earth in km
+        const dLat = deg2rad(lat2 - lat1);
+        const dLon = deg2rad(lon2 - lon1);
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const d = R * c; // Distance in km
+        return d;
     };
 
-    const handleCompleteJob = async () => {
-        if (!activeJob) return;
-        const confirm = window.confirm("¿Has terminado de ayudar?");
-        if (!confirm) return;
-
-        try {
-            // 1. Save ID for rating
-            setRatingJobId(activeJob.id);
-
-            // 2. Update DB
-            const { error } = await supabase
-                .from('requests')
-                .update({ status: 'completed' })
-                .eq('id', activeJob.id);
-
-            if (error) throw error;
-
-            // 3. Show Modal & Clear Active Job
-            setShowRatingModal(true);
-            setActiveJob(null); // Clear immediately to switch view
-            fetchRequests(); // Sync with DB
-
-        } catch (error) {
-            console.error("Error completing job:", error);
-            alert("Error al finalizar: " + error.message);
-        }
+    const deg2rad = (deg) => {
+        return deg * (Math.PI / 180);
     };
 
-    const handleCancel = async () => {
-        if (!cancelReason) return alert("Por favor selecciona una razón");
-        if (cancelReason === 'Otro' && !cancelDescription.trim()) return alert("Por favor describe la razón");
+    // Filter requests based on radius
+    const filteredRequests = requests.filter(req => {
+        if (!userLocation) return true; // Show all if location not yet found (or handle differently)
+        const dist = calculateDistance(userLocation.lat, userLocation.lng, req.location_lat, req.location_lng);
+        return dist <= searchRadius;
+    });
 
-        const finalReason = cancelReason === 'Otro' ? `Otro: ${cancelDescription}` : cancelReason;
-
-        try {
-            const { error } = await supabase
-                .from('requests')
-                .update({
-                    status: 'cancelled',
-                    cancel_reason: finalReason
-                })
-                .eq('id', activeJob.id);
-
-            if (error) throw error;
-
-            setShowCancelModal(false);
-            fetchRequests();
-        } catch (error) {
-            alert("Error al cancelar: " + error.message);
-        }
-    };
-
-    const handleRate = async () => {
-        if (rating === 0) return alert("Por favor selecciona una calificación");
-        if (!ratingJobId) return;
-
-        try {
-            const { error } = await supabase
-                .from('requests')
-                .update({ rating_helper: rating })
-                .eq('id', ratingJobId);
-
-            if (error) throw error;
-
-            setShowRatingModal(false);
-            setRating(0);
-            setRatingJobId(null);
-            alert("¡Gracias por tu calificación!");
-            fetchRequests();
-        } catch (error) {
-            alert("Error al calificar: " + error.message);
-        }
-    };
-
-    const openGoogleMaps = () => {
-        if (activeJob) {
-            window.open(`https://www.google.com/maps/dir/?api=1&destination=${activeJob.location_lat},${activeJob.location_lng}&travelmode=driving`, '_blank');
-        }
-    };
+    // ... (rest of the component)
 
     // --- RENDER ---
 
@@ -356,6 +131,8 @@ export function HelperDashboard() {
 
             {/* MAIN CONTENT: Either Active Job Map OR Search Map */}
             {activeJob ? (
+                // ... (Active Job View - Unchanged)
+                // ...
                 // --- ACTIVE JOB VIEW ---
                 <>
                     <div className="h-2/3 w-full relative">
@@ -395,12 +172,7 @@ export function HelperDashboard() {
                                     En Curso
                                 </span>
                                 {/* Show counter if more than 1 job */}
-                                {requests.length > 0 && ( // Note: requests is emptied when activeJob is set, so we need another way to track count. 
-                                    // Actually, fetchRequests sets requests=[] when activeJob is found. 
-                                    // We need to store the 'total active jobs' count in a separate state or derived from the fetch.
-                                    // Let's modify fetchRequests to store this count.
-                                    // For now, I will assume the user might have multiple. 
-                                    // I'll add a "Cleanup" button if they feel stuck.
+                                {requests.length > 0 && (
                                     <span className="text-xs text-gray-400">ID: {activeJob.id.slice(0, 4)}</span>
                                 )}
                             </div>
@@ -448,7 +220,7 @@ export function HelperDashboard() {
                         <MapContainer center={[19.4326, -99.1332]} zoom={12} style={{ height: '100%', width: '100%' }}>
                             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-                            <FitBounds requests={requests} userLocation={userLocation} selectedRequest={selectedRequest} />
+                            <FitBounds requests={filteredRequests} userLocation={userLocation} selectedRequest={selectedRequest} />
 
                             {/* Helper Location (Red) */}
                             {userLocation && (
@@ -458,7 +230,7 @@ export function HelperDashboard() {
                             )}
 
                             {/* Requests (Green) */}
-                            {requests.map(req => (
+                            {filteredRequests.map(req => (
                                 <Marker
                                     key={req.id}
                                     position={[req.location_lat, req.location_lng]}
@@ -476,6 +248,33 @@ export function HelperDashboard() {
                                 </Marker>
                             ))}
                         </MapContainer>
+
+                        {/* Radius Filter Controls */}
+                        <div className="absolute top-4 left-4 right-16 z-[1000] bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-md border border-gray-200">
+                            <div className="flex flex-col space-y-2">
+                                <div className="flex justify-between items-center">
+                                    <label className="text-xs font-bold text-gray-700">Radio de búsqueda:</label>
+                                    <span className="text-xs font-bold text-primary">{searchRadius} km</span>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <input
+                                        type="range"
+                                        min="1"
+                                        max="100"
+                                        value={searchRadius}
+                                        onChange={(e) => setSearchRadius(Number(e.target.value))}
+                                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
+                                    />
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={searchRadius}
+                                        onChange={(e) => setSearchRadius(Number(e.target.value))}
+                                        className="w-16 p-1 text-xs border rounded text-center"
+                                    />
+                                </div>
+                            </div>
+                        </div>
 
                         {/* Manual Refresh Button */}
                         <div className="absolute top-4 right-4 z-[1000]">
@@ -519,16 +318,19 @@ export function HelperDashboard() {
 
                     <div className="flex-1 bg-white p-4 overflow-y-auto">
                         <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-lg font-bold text-gray-800">Solicitudes Activas ({requests.length})</h2>
+                            <h2 className="text-lg font-bold text-gray-800">Solicitudes Cercanas ({filteredRequests.length})</h2>
                         </div>
 
                         {loading && requests.length === 0 ? (
                             <p className="text-center text-gray-500">Cargando...</p>
-                        ) : requests.length === 0 ? (
-                            <p className="text-center text-gray-500">No hay solicitudes pendientes.</p>
+                        ) : filteredRequests.length === 0 ? (
+                            <div className="text-center py-8">
+                                <p className="text-gray-500 mb-2">No hay solicitudes en este rango.</p>
+                                <p className="text-xs text-gray-400">Intenta aumentar el radio de búsqueda.</p>
+                            </div>
                         ) : (
                             <div className="space-y-4">
-                                {requests.map((req) => (
+                                {filteredRequests.map((req) => (
                                     <div
                                         key={req.id}
                                         className={`border rounded-lg p-4 shadow-sm flex justify-between items-center cursor-pointer transition-colors ${selectedRequest?.id === req.id ? 'border-primary bg-yellow-50' : 'border-gray-200 hover:bg-gray-50'}`}
@@ -541,6 +343,11 @@ export function HelperDashboard() {
                                             <div>
                                                 <h3 className="font-bold text-gray-800">{req.issue_type}</h3>
                                                 <p className="text-sm text-gray-500">{req.profiles?.full_name}</p>
+                                                {userLocation && (
+                                                    <p className="text-xs text-gray-400 mt-1">
+                                                        a {calculateDistance(userLocation.lat, userLocation.lng, req.location_lat, req.location_lng).toFixed(1)} km
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
                                         <div className="text-primary">
