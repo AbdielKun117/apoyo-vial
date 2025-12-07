@@ -3,89 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { Battery, Navigation, AlertTriangle, CheckCircle, Clock, RefreshCw, Phone, MessageSquare, XCircle, Star } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { supabase } from '../lib/supabase';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+import { TOOLS_CATALOG, CATEGORY_MAPPING } from '../lib/constants';
 
-// Fix Leaflet icons
-let DefaultIcon = L.icon({
-    iconUrl: icon,
-    shadowUrl: iconShadow,
-    iconSize: [25, 41],
-    iconAnchor: [12, 41]
-});
-L.Marker.prototype.options.icon = DefaultIcon;
-
-// Custom Icons
-const redIcon = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
-});
-
-const greenIcon = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
-});
-
-// Component to auto-fit map bounds
-function FitBounds({ requests, userLocation, selectedRequest, activeJob, victimLocation }) {
-    const map = useMap();
-
-    useEffect(() => {
-        if (!map) return;
-
-        const bounds = L.latLngBounds();
-        let hasPoints = false;
-
-        // Priority 1: Active Job (Show Helper + Request Location)
-        if (activeJob) {
-            // Always include the fixed request location (The Incident/Car)
-            bounds.extend([activeJob.location_lat, activeJob.location_lng]);
-
-            // Include Helper location if available
-            if (userLocation) {
-                bounds.extend([userLocation.lat, userLocation.lng]);
-            }
-
-            hasPoints = true;
-        }
-        // Priority 2: Selected Request
-        else if (selectedRequest) {
-            bounds.extend([selectedRequest.location_lat, selectedRequest.location_lng]);
-            if (userLocation) {
-                bounds.extend([userLocation.lat, userLocation.lng]);
-            }
-            hasPoints = true;
-        }
-        // Priority 3: All Requests
-        else {
-            if (userLocation) {
-                bounds.extend([userLocation.lat, userLocation.lng]);
-                hasPoints = true;
-            }
-            requests.forEach(req => {
-                bounds.extend([req.location_lat, req.location_lng]);
-                hasPoints = true;
-            });
-        }
-
-        if (hasPoints) {
-            map.fitBounds(bounds, { padding: [50, 50] });
-        }
-    }, [map, requests, userLocation, selectedRequest, activeJob, victimLocation]);
-
-    return null;
-}
+// ... (imports)
 
 export function HelperDashboard() {
     const navigate = useNavigate();
@@ -96,6 +16,7 @@ export function HelperDashboard() {
     const [userLocation, setUserLocation] = useState(null);
     const [selectedRequest, setSelectedRequest] = useState(null);
     const [searchRadius, setSearchRadius] = useState(50); // Default 50km
+    const [userTools, setUserTools] = useState([]);
 
     // Helper: Calculate distance in km (Haversine Formula)
     const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -115,12 +36,51 @@ export function HelperDashboard() {
         return deg * (Math.PI / 180);
     };
 
-    // Filter requests based on radius
-    const filteredRequests = requests.filter(req => {
-        if (!userLocation) return true; // Show all if location not yet found (or handle differently)
-        const dist = calculateDistance(userLocation.lat, userLocation.lng, req.location_lat, req.location_lng);
-        return dist <= searchRadius;
-    });
+    // Helper: Check if user has tools for the request
+    const checkCapability = (issueType) => {
+        if (issueType === 'Otro') return true; // Always capable for generic help
+
+        // 1. Find which categories this issue belongs to
+        // Inverted mapping: We need to know which tool categories solve this issue.
+        // CATEGORY_MAPPING: Tool Category -> [Issue Types Solved]
+
+        // Let's find tool categories that can solve 'issueType'
+        const usefulCategories = Object.keys(CATEGORY_MAPPING).filter(cat =>
+            CATEGORY_MAPPING[cat].includes(issueType)
+        );
+
+        // 2. Check if user has ANY tool in those categories
+        const hasTool = userTools.some(toolId => {
+            const toolDef = TOOLS_CATALOG.find(t => t.id === toolId);
+            return toolDef && usefulCategories.includes(toolDef.category);
+        });
+
+        return hasTool;
+    };
+
+    // Filter requests based on radius AND Sort by Capability
+    const filteredRequests = requests
+        .filter(req => {
+            if (!userLocation) return true;
+            const dist = calculateDistance(userLocation.lat, userLocation.lng, req.location_lat, req.location_lng);
+            return dist <= searchRadius;
+        })
+        .sort((a, b) => {
+            // Sort by Capability first (Capable -> Incapable)
+            const aCapable = checkCapability(a.issue_type);
+            const bCapable = checkCapability(b.issue_type);
+
+            if (aCapable && !bCapable) return -1;
+            if (!aCapable && bCapable) return 1;
+
+            // Then by distance (closest first) - Optional but good UX
+            if (userLocation) {
+                const distA = calculateDistance(userLocation.lat, userLocation.lng, a.location_lat, a.location_lng);
+                const distB = calculateDistance(userLocation.lat, userLocation.lng, b.location_lat, b.location_lng);
+                return distA - distB;
+            }
+            return 0;
+        });
 
     // ... (rest of the component)
 
@@ -347,6 +307,11 @@ export function HelperDashboard() {
                                                     <p className="text-xs text-gray-400 mt-1">
                                                         a {calculateDistance(userLocation.lat, userLocation.lng, req.location_lat, req.location_lng).toFixed(1)} km
                                                     </p>
+                                                )}
+                                                {!checkCapability(req.issue_type) && (
+                                                    <span className="inline-block bg-red-100 text-red-800 text-[10px] px-2 py-0.5 rounded-full mt-1">
+                                                        Faltan herramientas
+                                                    </span>
                                                 )}
                                             </div>
                                         </div>

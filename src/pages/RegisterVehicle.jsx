@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { useStore } from '../store/useStore';
-import { Car, Truck, Bike } from 'lucide-react';
+import { Car, Truck, Bike, Wrench } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { TOOLS_CATALOG } from '../lib/constants';
 
 export function RegisterVehicle() {
     const navigate = useNavigate();
@@ -17,7 +18,8 @@ export function RegisterVehicle() {
         model: '',
         color: '',
         plates: '',
-        type: 'sedan'
+        type: 'sedan',
+        tools: []
     });
 
     // Check if user is logged in and fetch existing data
@@ -43,7 +45,8 @@ export function RegisterVehicle() {
                     model: profile.vehicle_model || '',
                     color: profile.vehicle_color || '',
                     plates: profile.vehicle_plates || '',
-                    type: profile.vehicle_type || 'sedan'
+                    type: profile.vehicle_type || 'sedan',
+                    tools: profile.tools || []
                 });
             }
         };
@@ -53,6 +56,15 @@ export function RegisterVehicle() {
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const toggleTool = (toolId) => {
+        setFormData(prev => {
+            const tools = prev.tools.includes(toolId)
+                ? prev.tools.filter(t => t !== toolId)
+                : [...prev.tools, toolId];
+            return { ...prev, tools };
+        });
     };
 
     const handleSubmit = async (e) => {
@@ -72,6 +84,7 @@ export function RegisterVehicle() {
                 vehicle_color: formData.color,
                 vehicle_plates: formData.plates,
                 vehicle_type: formData.type,
+                tools: formData.tools,
                 email: user.email,
                 updated_at: new Date(),
             };
@@ -171,6 +184,25 @@ export function RegisterVehicle() {
                         required
                         className="flex-1"
                     />
+                </div>
+
+                <h3 className="font-bold text-gray-700 border-b pb-2 pt-4">Tus Herramientas (Opcional)</h3>
+                <p className="text-xs text-gray-500 mb-2">Selecciona las herramientas que llevas contigo para ayudar a otros.</p>
+
+                <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto p-1">
+                    {TOOLS_CATALOG.map((tool) => (
+                        <div
+                            key={tool.id}
+                            onClick={() => toggleTool(tool.id)}
+                            className={`flex items-center p-2 rounded border cursor-pointer text-sm transition-colors ${formData.tools.includes(tool.id)
+                                ? 'bg-blue-50 border-blue-500 text-blue-700'
+                                : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                                }`}
+                        >
+                            <Wrench className={`w-4 h-4 mr-2 ${formData.tools.includes(tool.id) ? 'text-blue-500' : 'text-gray-400'}`} />
+                            <span className="truncate">{tool.name}</span>
+                        </div>
+                    ))}
                 </div>
 
                 <Button type="submit" className="w-full mt-6" disabled={loading}>

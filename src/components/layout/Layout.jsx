@@ -5,16 +5,24 @@ export function Layout() {
         <div className="min-h-screen bg-gray-50 flex flex-col">
             <header className="bg-secondary text-white p-4 shadow-md sticky top-0 z-50">
                 <div className="container mx-auto flex justify-between items-center">
-                    <h1 className="text-xl font-bold text-primary">Apoyo Vial</h1>
-                    <button
-                        onClick={async () => {
-                            await import('../../lib/supabase').then(m => m.supabase.auth.signOut());
-                            window.location.href = '/';
-                        }}
-                        className="text-sm bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-white font-bold transition-colors"
-                    >
-                        Salir
-                    </button>
+                    <h1 className="text-xl font-bold text-primary cursor-pointer" onClick={() => window.location.href = '/role-selection'}>Apoyo Vial</h1>
+                    <div className="flex items-center space-x-4">
+                        <button
+                            onClick={() => window.location.href = '/suggestions'}
+                            className="text-sm text-gray-300 hover:text-white transition-colors"
+                        >
+                            Sugerencias
+                        </button>
+                        <button
+                            onClick={async () => {
+                                await import('../../lib/supabase').then(m => m.supabase.auth.signOut());
+                                window.location.href = '/';
+                            }}
+                            className="text-sm bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-white font-bold transition-colors"
+                        >
+                            Salir
+                        </button>
+                    </div>
                 </div>
             </header>
 

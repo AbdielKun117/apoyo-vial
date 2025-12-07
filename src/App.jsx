@@ -11,6 +11,8 @@ import { HelperProfile } from './pages/HelperProfile';
 import { RegisterVehicle } from './pages/RegisterVehicle';
 import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
+import { Suggestions } from './pages/Suggestions';
+import { ResetPassword } from './pages/ResetPassword';
 
 function App() {
   const { setUser, setVehicle } = useStore();
@@ -68,6 +70,8 @@ function App() {
           <Route path="/request-confirmation" element={<RequestConfirmation />} />
           <Route path="/request-status" element={<RequestStatus />} />
           <Route path="/helper-dashboard" element={<HelperDashboard />} />
+          <Route path="/suggestions" element={<Suggestions />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
         </Route>
       </Routes>
     </BrowserRouter>

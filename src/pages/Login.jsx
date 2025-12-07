@@ -112,6 +112,26 @@ export function Login() {
                     required
                     minLength={6}
                 />
+
+                {!isSignUp && (
+                    <div className="text-right">
+                        <button
+                            type="button"
+                            onClick={async () => {
+                                if (!email) return alert("Ingresa tu correo primero.");
+                                const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                                    redirectTo: `${window.location.origin}/reset-password`,
+                                });
+                                if (error) alert(error.message);
+                                else alert("Revisa tu correo para restablecer la contraseña.");
+                            }}
+                            className="text-xs text-primary hover:underline"
+                        >
+                            ¿Olvidaste tu contraseña?
+                        </button>
+                    </div>
+                )}
+
                 <Button type="submit" className="w-full" disabled={loading}>
                     {loading ? 'Cargando...' : (isSignUp ? 'Registrarse' : 'Iniciar Sesión')}
                 </Button>
