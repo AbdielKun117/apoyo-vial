@@ -85,6 +85,7 @@ export function Login() {
     return (
         <div className="flex flex-col items-center justify-center min-h-[80vh] space-y-6">
             <div className="text-center space-y-2">
+                <img src="/logo.png" alt="Apoyo Vial" className="h-24 w-auto mx-auto mb-4" />
                 <h1 className="text-3xl font-bold text-secondary">
                     {isSignUp ? 'Crear Cuenta' : 'Bienvenido'}
                 </h1>

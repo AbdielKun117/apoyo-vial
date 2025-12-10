@@ -5,7 +5,10 @@ export function Layout() {
         <div className="min-h-screen bg-gray-50 flex flex-col">
             <header className="bg-secondary text-white p-4 shadow-md sticky top-0 z-50">
                 <div className="container mx-auto flex justify-between items-center">
-                    <h1 className="text-xl font-bold text-primary cursor-pointer" onClick={() => window.location.href = '/role-selection'}>Apoyo Vial</h1>
+                    <div className="flex items-center space-x-2 cursor-pointer" onClick={() => window.location.href = '/role-selection'}>
+                        <img src="/logo.png" alt="Apoyo Vial Logo" className="h-10 w-auto" />
+                        <h1 className="text-xl font-bold text-primary">Apoyo Vial</h1>
+                    </div>
                     <div className="flex items-center space-x-4">
                         <button
                             onClick={() => window.location.href = '/suggestions'}
