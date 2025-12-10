@@ -4,12 +4,17 @@ export default {
         "./index.html",
         "./src/**/*.{js,ts,jsx,tsx}",
     ],
+    darkMode: 'class', // Enable class-based dark mode
     theme: {
         extend: {
             colors: {
-                primary: '#FFB703', // Safety Yellow/Orange
-                secondary: '#023047', // Dark Blue
-                accent: '#FB8500', // Orange
+                primary: 'var(--color-primary)',
+                secondary: 'var(--color-secondary)',
+                accent: 'var(--color-accent)',
+                'bg-main': 'var(--color-bg-main)',
+                'bg-card': 'var(--color-bg-card)',
+                'text-main': 'var(--color-text-main)',
+                'text-muted': 'var(--color-text-muted)',
             }
         },
     },

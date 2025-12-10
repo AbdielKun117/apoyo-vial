@@ -1,8 +1,12 @@
 import { Outlet } from 'react-router-dom';
+import { useStore } from '../../store/useStore';
+import { Moon, Sun } from 'lucide-react';
 
 export function Layout() {
+    const { theme, toggleTheme } = useStore();
+
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col">
+        <div className="min-h-screen bg-bg-main text-text-main flex flex-col transition-colors duration-300">
             <header className="bg-secondary text-white p-4 shadow-md sticky top-0 z-50">
                 <div className="container mx-auto flex justify-between items-center">
                     <div className="flex items-center space-x-2 cursor-pointer" onClick={() => window.location.href = '/role-selection'}>
@@ -10,6 +14,13 @@ export function Layout() {
                         <h1 className="text-xl font-bold text-primary">Apoyo Vial</h1>
                     </div>
                     <div className="flex items-center space-x-4">
+                        <button
+                            onClick={toggleTheme}
+                            className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                            aria-label="Toggle Theme"
+                        >
+                            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                        </button>
                         <button
                             onClick={() => window.location.href = '/suggestions'}
                             className="text-sm text-gray-300 hover:text-white transition-colors"

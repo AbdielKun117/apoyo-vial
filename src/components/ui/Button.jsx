@@ -9,8 +9,8 @@ export function Button({ className, variant = 'primary', size = 'default', ...pr
     const variants = {
         primary: 'bg-primary text-white hover:bg-yellow-500',
         secondary: 'bg-secondary text-white hover:bg-blue-900',
-        outline: 'border-2 border-primary text-primary hover:bg-yellow-50',
-        ghost: 'hover:bg-gray-100 text-gray-700',
+        outline: 'border-2 border-primary text-primary hover:bg-yellow-50 dark:hover:bg-gray-800',
+        ghost: 'hover:bg-gray-100 dark:hover:bg-gray-800 text-text-main',
     };
 
     const sizes = {

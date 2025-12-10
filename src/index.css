@@ -1,15 +1,52 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #FFB703;
-  --color-secondary: #023047;
-  --color-accent: #FB8500;
+  --color-primary: var(--color-primary);
+  --color-secondary: var(--color-secondary);
+  --color-accent: var(--color-accent);
+  --color-bg-main: var(--color-bg-main);
+  --color-bg-card: var(--color-bg-card);
+  --color-text-main: var(--color-text-main);
+  --color-text-muted: var(--color-text-muted);
 }
 
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+
+  /* Light Mode (Default) */
+  --color-primary: #FFB703;
+  --color-secondary: #023047;
+  --color-accent: #FB8500;
+
+  --color-bg-main: #f9fafb;
+  /* gray-50 */
+  --color-bg-card: #ffffff;
+  --color-text-main: #111827;
+  /* gray-900 */
+  --color-text-muted: #6b7280;
+  /* gray-500 */
+}
+
+:root.dark {
+  /* Dark Mode */
+  --color-primary: #FFB703;
+  /* Keep brand yellow */
+  --color-secondary: #8ECAE6;
+  /* Lighter blue for dark mode text/accents */
+  --color-accent: #FB8500;
+
+  --color-bg-main: #1e293b;
+  /* slate-900 */
+  --color-bg-card: #0f172a;
+  /* slate-950 */
+  --color-text-main: #f3f4f6;
+  /* gray-100 */
+  --color-text-muted: #9ca3af;
+  /* gray-400 */
 }
 
 body {
-  @apply bg-gray-50 text-gray-900;
+  background-color: var(--color-bg-main);
+  color: var(--color-text-main);
+  transition: background-color 0.3s, color 0.3s;
 }

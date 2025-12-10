@@ -16,7 +16,16 @@ import { ResetPassword } from './pages/ResetPassword';
 import { AuthListener } from './components/auth/AuthListener';
 
 function App() {
-  const { setUser, setVehicle } = useStore();
+  const { setUser, setVehicle, theme } = useStore();
+
+  useEffect(() => {
+    // Apply theme
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
 
   useEffect(() => {
     // Restore session on app load
