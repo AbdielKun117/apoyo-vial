@@ -83,9 +83,9 @@ export function Login() {
     };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-[80vh] space-y-6">
-            <div className="text-center space-y-2">
-                <img src="/logo.png" alt="Apoyo Vial" className="h-24 w-auto mx-auto mb-4" />
+        <div className="flex flex-col items-center justify-center min-h-[80vh] space-y-3">
+            <div className="text-center space-y-1">
+                <img src="/logo.png" alt="Apoyo Vial" className="h-36 w-auto mx-auto mb-1" />
                 <h1 className="text-3xl font-bold text-secondary">
                     {isSignUp ? 'Crear Cuenta' : 'Bienvenido'}
                 </h1>
@@ -94,7 +94,7 @@ export function Login() {
                 </p>
             </div>
 
-            <form onSubmit={handleAuth} className="w-full max-w-sm space-y-4 bg-white p-6 rounded-lg shadow-md">
+            <form onSubmit={handleAuth} className="w-full max-w-sm space-y-3 bg-white p-6 rounded-lg shadow-md">
                 {error && (
                     <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
                         <span className="block sm:inline">{error}</span>
