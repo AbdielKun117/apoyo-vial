@@ -1,0 +1,17 @@
+{
+    "name": "Apoyo Vial",
+    "short_name": "Apoyo Vial",
+    "description": "Aplicación de asistencia vial comunitaria",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#FFB703",
+    "icons": [
+        {
+            "src": "/logo.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}
