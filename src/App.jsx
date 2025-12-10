@@ -13,6 +13,7 @@ import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
 import { Suggestions } from './pages/Suggestions';
 import { ResetPassword } from './pages/ResetPassword';
+import { AuthListener } from './components/auth/AuthListener';
 
 function App() {
   const { setUser, setVehicle } = useStore();
@@ -46,20 +47,11 @@ function App() {
     };
 
     restoreSession();
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT') {
-        setUser({ name: '', phone: '', email: '' });
-        setVehicle({ model: '', color: '', plates: '', type: 'sedan' });
-      }
-    });
-
-    return () => subscription.unsubscribe();
   }, [setUser, setVehicle]);
 
   return (
     <BrowserRouter>
+      <AuthListener />
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<Login />} />

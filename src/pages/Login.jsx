@@ -17,6 +17,11 @@ export function Login() {
     // Auto-redirect if already logged in
     useEffect(() => {
         const checkSession = async () => {
+            // If handling password recovery, do not auto-redirect
+            if (window.location.hash && window.location.hash.includes('type=recovery')) {
+                return;
+            }
+
             const { data: { session } } = await supabase.auth.getSession();
             if (session) {
                 navigate('/role-selection', { replace: true });
